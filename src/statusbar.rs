@@ -232,8 +232,54 @@ extern "C" fn refresh_now_impl(_this: &AnyObject, _cmd: Sel, _sender: *mut AnyOb
 }
 
 extern "C" fn set_key_impl(_this: &AnyObject, _cmd: Sel, _sender: *mut AnyObject) {
-    show_alert_str("Set Kimi API Key",
-        "Run in Terminal:\n\nsecurity add-generic-password -s \"Kimi Code Status\" -a \"kimi-api-key\" -w \"sk-your-key\"\n\nThen restart the app.");
+    // Menu action callbacks run on main thread — show alert directly
+    let key = show_key_input_alert();
+    if let Some(key) = key {
+        let key = key.trim().to_string();
+        if !key.is_empty() {
+            if let Err(e) = crate::keychain::store_api_key(
+                crate::keychain::KIMI_SERVICE,
+                crate::keychain::KIMI_ACCOUNT,
+                &key,
+            ) {
+                show_alert_str("Error", &format!("Failed to save: {e}"));
+            } else {
+                show_alert_str("Saved", "Kimi API key saved.\nRestart to see usage data.");
+            }
+        }
+    }
+}
+
+fn show_key_input_alert() -> Option<String> {
+    unsafe {
+        let cls: *mut AnyObject = AnyClass::get(c"NSAlert").unwrap() as *const _ as *mut _;
+        let alert: *mut AnyObject = objc2::msg_send![cls, new];
+        let _: () = objc2::msg_send![alert, setMessageText: &*NSString::from_str("Set Kimi Code API Key")];
+        let _: () = objc2::msg_send![alert, setInformativeText: &*NSString::from_str("Enter your Kimi API key (starts with sk-)")];
+
+        // Create input text field
+        let tf_cls: *mut AnyObject = AnyClass::get(c"NSTextField").unwrap() as *const _ as *mut _;
+        let rect = objc2_foundation::NSRect { origin: objc2_foundation::NSPoint { x: 0.0, y: 0.0 }, size: objc2_foundation::NSSize { width: 300.0, height: 24.0 } };
+        let tf: *mut AnyObject = objc2::msg_send![tf_cls, alloc];
+        let tf: *mut AnyObject = objc2::msg_send![tf, initWithFrame: rect];
+        let _: () = objc2::msg_send![tf, setStringValue: &*NSString::from_str("")];
+        let _: () = objc2::msg_send![tf, setPlaceholderString: &*NSString::from_str("sk-xxxxxxxxxxxxxxxx")];
+        let _: () = objc2::msg_send![alert, setAccessoryView: tf];
+
+        let _: () = objc2::msg_send![alert, addButtonWithTitle: &*NSString::from_str("Save")];
+        let _: () = objc2::msg_send![alert, addButtonWithTitle: &*NSString::from_str("Cancel")];
+
+        let response: isize = objc2::msg_send![alert, runModal];
+        if response == 1000 {
+            // NSAlertFirstButtonReturn
+            let value: *mut AnyObject = objc2::msg_send![tf, stringValue];
+            if !value.is_null() {
+                let s = (*(value as *const NSString)).to_string();
+                return Some(s);
+            }
+        }
+    }
+    None
 }
 
 fn show_alert_str(title: &str, msg: &str) {
