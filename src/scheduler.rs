@@ -38,24 +38,19 @@ async fn refresh_all(
     if kimi_enabled {
         let kimi = KimiProvider::new();
         let quota = kimi.query().await;
-
-        {
-            let mut vm = vm.lock().unwrap();
-            vm.kimi_quota = Some(quota);
-        }
+        let mut vm = vm.lock().unwrap();
+        vm.kimi_quota = Some(quota);
+        vm.last_refreshed_service = Some("kimi".into());
     }
 
     // Query Codex
     if codex_enabled {
         let codex = CodexProvider::new();
         let quota = codex.query().await;
-
-        {
-            let mut vm = vm.lock().unwrap();
-            vm.codex_quota = Some(quota);
-        }
+        let mut vm = vm.lock().unwrap();
+        vm.codex_quota = Some(quota);
+        vm.last_refreshed_service = Some("codex".into());
     }
 
-    // Dispatch UI update to main thread
     StatusBarApp::schedule_update(app, vm);
 }

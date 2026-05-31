@@ -1,4 +1,3 @@
-use crate::formatter;
 use crate::types::{QuotaTier, ServiceQuota, ToolInfo};
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
@@ -10,7 +9,7 @@ use objc2::sel;
 use objc2::MainThreadOnly;
 use objc2_foundation::{MainThreadMarker, NSString};
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSMenu, NSMenuItem, NSStatusBar,
+    NSApplication, NSApplicationActivationPolicy, NSImage, NSMenu, NSMenuItem, NSStatusBar,
 };
 
 // ── Shared state ──
@@ -22,6 +21,7 @@ pub struct AppViewModel {
     pub tools: Vec<ToolInfo>,
     pub selected_tools: Vec<String>,
     pub first_run: bool,
+    pub last_refreshed_service: Option<String>,
 }
 
 pub struct StatusBarApp {
@@ -32,10 +32,72 @@ pub struct StatusBarApp {
 unsafe impl Send for StatusBarApp {}
 unsafe impl Sync for StatusBarApp {}
 
-// ── Raw ObjC delegate class (no objc2 ClassBuilder) ──
+// ── Icon loading ──
+
+/// Load the .app icon via NSWorkspace iconForFile: and scale to 16x16 menu size.
+fn load_app_icon(app_path: &str) -> Option<Retained<NSImage>> {
+    unsafe {
+        let ws_cls: *mut AnyObject = AnyClass::get(c"NSWorkspace").unwrap() as *const _ as *mut _;
+        let ws: *mut AnyObject = objc2::msg_send![ws_cls, sharedWorkspace];
+        if ws.is_null() { return None; }
+
+        let ns_path = NSString::from_str(app_path);
+        let icon_raw: *mut AnyObject = objc2::msg_send![ws, iconForFile: &*ns_path];
+        if icon_raw.is_null() { return None; }
+
+        // Scale to 16x16
+        let size = objc2_foundation::NSSize { width: 16.0, height: 16.0 };
+        let _: () = objc2::msg_send![icon_raw, setSize: size];
+
+        // Retain and wrap — iconForFile returns autoreleased, Retained::retain bumps count
+        Retained::retain(icon_raw as *mut NSImage)
+    }
+}
+
+/// Try multiple common paths for an app icon.
+fn find_app_icon(name: &str) -> Option<Retained<NSImage>> {
+    let candidates = [
+        format!("/Applications/{name}.app"),
+        format!("/Applications/{name} CN.app"),
+        format!("/System/Applications/{name}.app"),
+    ];
+    for p in &candidates {
+        if std::path::Path::new(p).exists() {
+            return load_app_icon(p);
+        }
+    }
+    // Try broader: Kimi apps might be named differently
+    if name == "Kimi" {
+        for extra in &["Kimi For Coding", "KimiCode", "kimi"] {
+            let p = format!("/Applications/{extra}.app");
+            if std::path::Path::new(&p).exists() { return load_app_icon(&p); }
+        }
+    }
+    if name == "Codex" {
+        for extra in &["Codex CLI", "codex"] {
+            let p = format!("/Applications/{extra}.app");
+            if std::path::Path::new(&p).exists() { return load_app_icon(&p); }
+        }
+    }
+    None
+}
+
+/// Cache key for an icon: uses the launch name or .app name.
+fn get_or_load_icon(cache: &mut std::collections::HashMap<String, Retained<NSImage>>, name: &str) -> Option<*mut AnyObject> {
+    if let Some(icon) = cache.get(name) {
+        return Some(icon as *const _ as *mut _);
+    }
+    if let Some(icon) = find_app_icon(name) {
+        let ptr = &*icon as *const NSImage as *mut AnyObject;
+        cache.insert(name.to_string(), icon);
+        return Some(ptr);
+    }
+    None
+}
+
+// ── Raw ObjC delegate class ──
 
 fn make_delegate() -> Retained<AnyObject> {
-    // Lazy-init the class on first call
     static CLASS: std::sync::OnceLock<SendClass> = std::sync::OnceLock::new();
     let cls_ptr = CLASS.get_or_init(|| {
         let name = std::ffi::CString::new(format!("KCSDel{}", std::process::id())).unwrap();
@@ -43,14 +105,12 @@ fn make_delegate() -> Retained<AnyObject> {
             let superclass: *mut AnyObject = AnyClass::get(c"NSObject").unwrap() as *const _ as *mut _;
             let cls = objc_allocateClassPair(superclass, name.as_ptr(), 0);
             if cls.is_null() { panic!("objc_allocateClassPair failed"); }
-
             let s = sel!(openTool:);
             class_addMethod(cls, s, open_tool_impl as *mut c_void, c"v@:@".as_ptr());
             let s = sel!(refreshNow:);
             class_addMethod(cls, s, refresh_now_impl as *mut c_void, c"v@:@".as_ptr());
             let s = sel!(setKimiKey:);
             class_addMethod(cls, s, set_key_impl as *mut c_void, c"v@:@".as_ptr());
-
             objc_registerClassPair(cls);
             SendClass(cls)
         }
@@ -59,62 +119,43 @@ fn make_delegate() -> Retained<AnyObject> {
     unsafe {
         let obj: *mut AnyObject = objc2::msg_send![cls_ptr, alloc];
         let obj: *mut AnyObject = objc2::msg_send![obj, init];
-        Retained::from_raw(obj).expect("delegate alloc+init")
+        Retained::from_raw(obj).expect("delegate")
     }
 }
 
 extern "C" {
-    fn objc_allocateClassPair(
-        superclass: *mut AnyObject,
-        name: *const std::os::raw::c_char,
-        extra_bytes: usize,
-    ) -> *mut AnyObject;
+    fn objc_allocateClassPair(superclass: *mut AnyObject, name: *const std::os::raw::c_char, extra_bytes: usize) -> *mut AnyObject;
     fn objc_registerClassPair(cls: *mut AnyObject);
-    fn class_addMethod(
-        cls: *mut AnyObject,
-        name: Sel,
-        imp: *mut c_void,
-        types: *const std::os::raw::c_char,
-    ) -> bool;
+    fn class_addMethod(cls: *mut AnyObject, name: Sel, imp: *mut c_void, types: *const std::os::raw::c_char) -> bool;
 }
 
-// Wrapper to make raw class pointer Send+Sync (safe: ObjC classes are global)
 struct SendClass(*mut AnyObject);
 unsafe impl Send for SendClass {}
 unsafe impl Sync for SendClass {}
 
-// ── Delegate method implementations ──
+// ── Delegate impls ──
 
 extern "C" fn open_tool_impl(_this: &AnyObject, _cmd: Sel, sender: *mut AnyObject) {
     if sender.is_null() { return; }
-    // Read representedObject (NSString) from the menu item
     let obj: *mut AnyObject = unsafe { objc2::msg_send![sender, representedObject] };
     if obj.is_null() { return; }
     let name = unsafe { (*(obj as *const NSString)).to_string() };
-    // Launch via open -a (fire-and-forget)
     std::thread::spawn(move || {
-        let _ = std::process::Command::new("open")
-            .arg("-a").arg(&name)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
+        let _ = std::process::Command::new("open").arg("-a").arg(&name)
+            .stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
     });
 }
 
 extern "C" fn refresh_now_impl(_this: &AnyObject, _cmd: Sel, _sender: *mut AnyObject) {
-    // Just show a note — auto-refresh handles it
-    show_alert_str("Refresh", "Auto-refresh runs every 5 minutes.\nQueries are in progress now.");
+    show_alert_str("Refresh", "Auto-refresh runs every 5 minutes. Data updates automatically.");
 }
 
 extern "C" fn set_key_impl(_this: &AnyObject, _cmd: Sel, _sender: *mut AnyObject) {
-    show_alert_str(
-        "Set Kimi API Key",
-        "Run this command in Terminal:\n\nsecurity add-generic-password -s \"Kimi Code Status\" -a \"kimi-api-key\" -w \"sk-your-key\"\n\nThen restart the app.",
-    );
+    show_alert_str("Set Kimi API Key",
+        "Run in Terminal:\n\nsecurity add-generic-password -s \"Kimi Code Status\" -a \"kimi-api-key\" -w \"sk-your-key\"\n\nThen restart the app.");
 }
 
 fn show_alert_str(title: &str, msg: &str) {
-    // Use NSAlert on main thread. We're called from a menu action which is already on main thread.
     unsafe {
         let cls: *mut AnyObject = AnyClass::get(c"NSAlert").unwrap() as *const _ as *mut _;
         let a: *mut AnyObject = objc2::msg_send![cls, new];
@@ -125,7 +166,7 @@ fn show_alert_str(title: &str, msg: &str) {
     }
 }
 
-// ── StatusBarApp impl ──
+// ── StatusBarApp ──
 
 impl StatusBarApp {
     pub fn new(mtm: MainThreadMarker, vm: &AppViewModel) -> Self {
@@ -136,19 +177,17 @@ impl StatusBarApp {
         let del_ptr: *mut AnyObject = &*delegate as *const _ as *mut _;
 
         let statusbar = NSStatusBar::systemStatusBar();
-        let status_item =
-            statusbar.statusItemWithLength(objc2_app_kit::NSVariableStatusItemLength);
+        let status_item = statusbar.statusItemWithLength(objc2_app_kit::NSVariableStatusItemLength);
 
-        // Show usage text in menu bar
+        // Set icon + text in menu bar
         if let Some(button) = status_item.button(mtm) {
             unsafe {
-                let text = Self::menu_bar_text(vm);
+                let text = Self::bar_text(vm);
                 let _: () = objc2::msg_send![&*button, setTitle: &*NSString::from_str(&text)];
-                let _: () = objc2::msg_send![&*button, setToolTip: &*NSString::from_str("AI Coding Dashboard — click for details")];
+                let _: () = objc2::msg_send![&*button, setToolTip: &*NSString::from_str("AI Coding Dashboard")];
             }
         }
 
-        // Build initial menu
         let menu = Self::build_menu(mtm, vm, del_ptr);
         status_item.setMenu(Some(&menu));
 
@@ -159,9 +198,7 @@ impl StatusBarApp {
         let app = Arc::clone(app);
         let vm = Arc::clone(vm);
         dispatch::Queue::main().exec_async(move || {
-            if let Ok(guard) = vm.lock() {
-                app.update(&guard);
-            }
+            if let Ok(guard) = vm.lock() { app.update(&guard); }
         });
     }
 
@@ -169,64 +206,84 @@ impl StatusBarApp {
         let mtm = MainThreadMarker::new().expect("main thread");
         if let Some(button) = self.status_item.button(mtm) {
             unsafe {
-                let text = Self::menu_bar_text(vm);
+                let text = Self::bar_text(vm);
                 let _: () = objc2::msg_send![&*button, setTitle: &*NSString::from_str(&text)];
             }
         }
-        // Rebuild menu with data
         let del_ptr: *mut AnyObject = &*self._delegate as *const _ as *mut _;
         let menu = Self::build_menu(mtm, vm, del_ptr);
         self.status_item.setMenu(Some(&menu));
     }
 
-    fn menu_bar_text(vm: &AppViewModel) -> String {
+    /// Menu bar text: shows h/w percentages without emoji (icons are handled by button image).
+    fn bar_text(vm: &AppViewModel) -> String {
         let mut parts = Vec::new();
         for q in [&vm.kimi_quota, &vm.codex_quota] {
             match q {
                 Some(q) if q.success => {
-                    if let Some(s) = formatter::format_summary(&q.tiers) { parts.push(s); }
+                    for t in &q.tiers {
+                        let label = match t.name.as_str() {
+                            "five_hour" => "h",
+                            "weekly_limit" | "seven_day" => "w",
+                            _ => "",
+                        };
+                        if !label.is_empty() {
+                            parts.push(format!("{label}{:.0}%", t.utilization));
+                        }
+                    }
                 }
                 Some(q) if !q.credential_valid && q.service == "kimi" => {
-                    parts.push("\u{26A0} Set Key".into());
+                    parts.push("  Set Key".into());
                 }
                 _ => {}
             }
         }
-        if parts.is_empty() { "\u{26AA} KCode".into() } else { parts.join("  ") }
+        if parts.is_empty() { "  KCode".into() } else { parts.join(" ") }
     }
 
     fn build_menu(mtm: MainThreadMarker, vm: &AppViewModel, del_ptr: *mut AnyObject) -> Retained<NSMenu> {
         let menu = NSMenu::new(mtm);
 
-        // ── Usage ──
-        Self::dlbl(&menu, mtm, "Usage");
-        Self::service_lines(&menu, mtm, "Kimi Code", &vm.kimi_quota);
-        Self::service_lines(&menu, mtm, "Codex", &vm.codex_quota);
+        // ── Status at a glance ──
+        let has_kimi = vm.kimi_quota.as_ref().is_some_and(|q| q.credential_valid);
+        let has_codex = vm.codex_quota.as_ref().is_some_and(|q| q.credential_valid);
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
+
+        let kimi_age = vm.kimi_quota.as_ref().and_then(|q| q.queried_at).map(|t| now - t).unwrap_or(i64::MAX);
+        let codex_age = vm.codex_quota.as_ref().and_then(|q| q.queried_at).map(|t| now - t).unwrap_or(i64::MAX);
+        let monitoring = if kimi_age < codex_age { "Kimi Code" } else { "Codex" };
+        Self::dlbl(&menu, mtm, &format!("Monitoring: {monitoring}"));
+        Self::sep(&menu, mtm);
+
+        // ── Usage Detail ──
+        if has_kimi {
+            Self::service_section(&menu, mtm, "Kimi Code", &vm.kimi_quota);
+        }
+        if has_codex {
+            Self::service_section(&menu, mtm, "Codex", &vm.codex_quota);
+        }
+        if !has_kimi && !has_codex {
+            Self::dlbl(&menu, mtm, "  Configure API keys to see usage");
+        }
         Self::dlbl(&menu, mtm, &Self::fmt_updated(vm));
         Self::sep(&menu, mtm);
 
         // ── API Keys ──
-        Self::dlbl(&menu, mtm, "API Keys");
-        let has_kimi = vm.kimi_quota.as_ref().is_some_and(|q| q.credential_valid);
-        if has_kimi {
-            Self::dlbl(&menu, mtm, "  Kimi Code  \u{2713} configured");
-        } else {
-            Self::act_with_target(&menu, mtm, "  Kimi Code  \u{26A0} Set API Key...", sel!(setKimiKey:), del_ptr);
+        if !has_kimi {
+            Self::act_with_target(&menu, mtm, "\u{26A0} Set Kimi API Key...", sel!(setKimiKey:), del_ptr);
         }
-        let has_codex = vm.codex_quota.as_ref().is_some_and(|q| q.credential_valid);
-        Self::dlbl(&menu, mtm, &format!("  Codex       {}", if has_codex { "\u{2713} auto-detected" } else { "\u{26A0} auto-detect: none" }));
+        if !has_codex {
+            Self::dlbl(&menu, mtm, "\u{26A0} Codex: login with 'codex login' in terminal");
+        }
         Self::sep(&menu, mtm);
 
-        // ── Harness Tools (clickable to launch!) ──
-        Self::dlbl(&menu, mtm, "Harness Tools");
+        // ── Harness Tools (with app icons!) ──
         for tool in &vm.tools {
-            let icon = if tool.installed { "  \u{2713}" } else { "  \u{2717}" };
-            let label = format!("{icon} {}", tool.name);
             if tool.installed {
                 let launch_name = tool.launch_as.as_deref().unwrap_or(&tool.name);
-                Self::act_with_target_and_tag(&menu, mtm, &label, sel!(openTool:), del_ptr, launch_name);
+                Self::tool_item(&menu, mtm, &tool.name, launch_name, sel!(openTool:), del_ptr);
             } else {
-                Self::dlbl(&menu, mtm, &label);
+                Self::dlbl(&menu, mtm, &format!("  \u{2717} {}", tool.name));
             }
         }
         Self::sep(&menu, mtm);
@@ -239,16 +296,16 @@ impl StatusBarApp {
         menu
     }
 
-    fn service_lines(menu: &NSMenu, mtm: MainThreadMarker, name: &str, q: &Option<ServiceQuota>) {
-        match q {
-            Some(q) if q.success && !q.tiers.is_empty() => {
+    fn service_section(menu: &NSMenu, mtm: MainThreadMarker, name: &str, q: &Option<ServiceQuota>) {
+        if let Some(q) = q {
+            if q.success && !q.tiers.is_empty() {
                 for t in &q.tiers {
                     let label = match t.name.as_str() {
                         "five_hour" => "5-Hour",
                         "weekly_limit" | "seven_day" => "7-Day",
                         _ => &t.name,
                     };
-                    let pct = format!("{:.0}%", t.utilization);
+                    let pct = format!("{:.0}%", t.utilization.round());
                     let cd = Self::tier_countdown(t);
                     let line = if cd.is_empty() {
                         format!("    {label}: {pct}")
@@ -257,10 +314,36 @@ impl StatusBarApp {
                     };
                     Self::dlbl(menu, mtm, &line);
                 }
+            } else {
+                Self::dlbl(menu, mtm, &format!("  {}  {}", name, q.error.as_deref().unwrap_or("Query failed")));
             }
-            Some(_) => { Self::dlbl(menu, mtm, &format!("  {}  No data", name)); }
-            None => { Self::dlbl(menu, mtm, &format!("  {}  \u{26AA} Loading...", name)); }
+        } else {
+            Self::dlbl(menu, mtm, &format!("  {}  Loading...", name));
         }
+    }
+
+    /// Menu item with the tool's .app icon loaded from /Applications.
+    fn tool_item(menu: &NSMenu, mtm: MainThreadMarker, _display_name: &str, launch_name: &str, action: Sel, target: *mut AnyObject) {
+        // Try loading icon from /Applications/<launch_name>.app
+        let app_path = format!("/Applications/{launch_name}.app");
+        let icon = load_app_icon(&app_path);
+
+        let label = format!("    {}", launch_name);
+        let item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(NSMenuItem::alloc(mtm), &NSString::from_str(&label), Some(action), &NSString::from_str(""))
+        };
+        item.setEnabled(true);
+
+        if let Some(ref icon) = icon {
+            item.setImage(Some(&**icon));
+        }
+
+        unsafe {
+            let _: () = objc2::msg_send![&*item as *const NSMenuItem as *mut AnyObject, setTarget: target];
+            let ns = NSString::from_str(launch_name);
+            let _: () = objc2::msg_send![&*item as *const NSMenuItem as *mut AnyObject, setRepresentedObject: &*ns];
+        }
+        menu.addItem(&item);
     }
 
     fn tier_countdown(t: &QuotaTier) -> String {
@@ -280,50 +363,31 @@ impl StatusBarApp {
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
         let latest = [&vm.kimi_quota, &vm.codex_quota].iter()
             .filter_map(|q| q.as_ref()).filter_map(|q| q.queried_at).max().unwrap_or(0);
-        if latest == 0 { "  Last updated: never".into() } else {
+        if latest == 0 { "  Updated: never".into() } else {
             let s = ((now - latest) as f64 / 1000.0) as u64;
             let t = if s < 60 { format!("{s}s ago") } else if s < 3600 { format!("{}m ago", s/60) } else { format!("{}h ago", s/3600) };
-            format!("  Last updated: {t}")
+            format!("  Updated: {t}")
         }
     }
 
-    // ── Menu helpers ──
+    // ── Helpers ──
 
     fn dlbl(menu: &NSMenu, mtm: MainThreadMarker, title: &str) {
-        let item = unsafe {
-            NSMenuItem::initWithTitle_action_keyEquivalent(NSMenuItem::alloc(mtm), &NSString::from_str(title), None, &NSString::from_str(""))
-        };
+        let item = unsafe { NSMenuItem::initWithTitle_action_keyEquivalent(NSMenuItem::alloc(mtm), &NSString::from_str(title), None, &NSString::from_str("")) };
         item.setEnabled(false);
         menu.addItem(&item);
     }
 
     fn act(menu: &NSMenu, mtm: MainThreadMarker, title: &str, action: Option<Sel>) {
-        let item = unsafe {
-            NSMenuItem::initWithTitle_action_keyEquivalent(NSMenuItem::alloc(mtm), &NSString::from_str(title), action, &NSString::from_str(""))
-        };
+        let item = unsafe { NSMenuItem::initWithTitle_action_keyEquivalent(NSMenuItem::alloc(mtm), &NSString::from_str(title), action, &NSString::from_str("")) };
         item.setEnabled(true);
         menu.addItem(&item);
     }
 
     fn act_with_target(menu: &NSMenu, mtm: MainThreadMarker, title: &str, action: Sel, target: *mut AnyObject) {
-        let item = unsafe {
-            NSMenuItem::initWithTitle_action_keyEquivalent(NSMenuItem::alloc(mtm), &NSString::from_str(title), Some(action), &NSString::from_str(""))
-        };
+        let item = unsafe { NSMenuItem::initWithTitle_action_keyEquivalent(NSMenuItem::alloc(mtm), &NSString::from_str(title), Some(action), &NSString::from_str("")) };
         item.setEnabled(true);
         unsafe { let _: () = objc2::msg_send![&*item as *const NSMenuItem as *mut AnyObject, setTarget: target]; }
-        menu.addItem(&item);
-    }
-
-    fn act_with_target_and_tag(menu: &NSMenu, mtm: MainThreadMarker, title: &str, action: Sel, target: *mut AnyObject, launch_name: &str) {
-        let item = unsafe {
-            NSMenuItem::initWithTitle_action_keyEquivalent(NSMenuItem::alloc(mtm), &NSString::from_str(title), Some(action), &NSString::from_str(""))
-        };
-        item.setEnabled(true);
-        unsafe {
-            let _: () = objc2::msg_send![&*item as *const NSMenuItem as *mut AnyObject, setTarget: target];
-            let ns = NSString::from_str(launch_name);
-            let _: () = objc2::msg_send![&*item as *const NSMenuItem as *mut AnyObject, setRepresentedObject: &*ns];
-        }
         menu.addItem(&item);
     }
 
@@ -331,5 +395,3 @@ impl StatusBarApp {
         menu.addItem(&NSMenuItem::separatorItem(mtm));
     }
 }
-
-
