@@ -52,6 +52,7 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Home directory
 dirs = "6"
+rand = "0.8"
 
 # Grand Central Dispatch for main-thread callbacks
 dispatch = "0.2"
