@@ -260,19 +260,19 @@ impl StatusBarApp {
         let statusbar = NSStatusBar::systemStatusBar();
         let status_item = statusbar.statusItemWithLength(objc2_app_kit::NSVariableStatusItemLength);
 
-        // Set icon + text in menu bar
+        // Set icon + text in menu bar (icon left, text right)
         if let Some(button) = status_item.button(mtm) {
             unsafe {
-                // Load the Kimi/Codex .app icon for the menu bar button
-                let icon = load_kimi_or_codex_icon();
-                if let Some(ref icon) = icon {
-                    let _: () = objc2::msg_send![&*button, setImage: &**icon as *const NSImage as *mut AnyObject];
-                    // NSImageLeft = 3
-                    let _: () = objc2::msg_send![&*button, setImagePosition: 3_usize];
-                }
-
                 let text = Self::bar_text(vm);
                 let _: () = objc2::msg_send![&*button, setTitle: &*NSString::from_str(&text)];
+
+                // Load Kimi.app/Codex.app icon, 16x16, left of text
+                if let Some(ref icon) = load_kimi_or_codex_icon() {
+                    let _: () = objc2::msg_send![&*button, setImage: &**icon as *const NSImage as *mut AnyObject];
+                    // NSImageLeft = 2 (NSButton imagePosition enum)
+                    let _: () = objc2::msg_send![&*button, setImagePosition: 2_usize];
+                }
+
                 let _: () = objc2::msg_send![&*button, setToolTip: &*NSString::from_str("AI Coding Dashboard")];
             }
         }
@@ -295,13 +295,13 @@ impl StatusBarApp {
         let mtm = MainThreadMarker::new().expect("main thread");
         if let Some(button) = self.status_item.button(mtm) {
             unsafe {
-                // Rotate icon based on most recent refresh
-                let icon = load_kimi_or_codex_icon();
-                if let Some(ref icon) = icon {
-                    let _: () = objc2::msg_send![&*button, setImage: &**icon as *const NSImage as *mut AnyObject];
-                }
                 let text = Self::bar_text(vm);
                 let _: () = objc2::msg_send![&*button, setTitle: &*NSString::from_str(&text)];
+
+                if let Some(ref icon) = load_kimi_or_codex_icon() {
+                    let _: () = objc2::msg_send![&*button, setImage: &**icon as *const NSImage as *mut AnyObject];
+                    let _: () = objc2::msg_send![&*button, setImagePosition: 2_usize];
+                }
             }
         }
         let del_ptr: *mut AnyObject = &*self._delegate as *const _ as *mut _;
