@@ -12,19 +12,27 @@ mod scheduler;
 mod statusbar;
 mod types;
 
+use objc2_foundation::MainThreadMarker;
+use objc2_app_kit::NSApplication;
+
 use statusbar::{AppViewModel, StatusBarApp};
 
+// Embed the icon at compile time — no runtime path resolution needed.
+const ICON_BYTES: &[u8] = include_bytes!("../icons/statusbar_template.png");
+
 fn main() {
-    env_logger::try_init().ok();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .target(env_logger::Target::Stderr)
+        .init();
 
-    let mtm = objc2_foundation::MainThreadMarker::new()
-        .expect("must be started on the main thread");
+    log::info!("AI Coding Dashboard starting...");
 
-    // Load configuration
+    let mtm = MainThreadMarker::new().expect("must run on main thread");
+
+    // ── Load config ──
     let cfg = config::load_config();
     let first_run = !cfg.first_run_completed;
     let selected_tools = if first_run {
-        // Auto-select all installed tools on first run
         harness::scan_tools()
             .iter()
             .filter(|t| t.installed)
@@ -34,7 +42,6 @@ fn main() {
         cfg.selected_tools.clone()
     };
 
-    // Scan for installed AI tools
     let tools = harness::scan_tools();
     log::info!(
         "Scanned {} tools, {} installed",
@@ -42,7 +49,7 @@ fn main() {
         tools.iter().filter(|t| t.installed).count()
     );
 
-    // Create shared view model
+    // ── Shared state ──
     let vm = Arc::new(Mutex::new(AppViewModel {
         first_run,
         tools,
@@ -50,17 +57,13 @@ fn main() {
         ..Default::default()
     }));
 
-    // Resolve icon path (try multiple locations)
-    let icon_path = resolve_icon_path();
-
-    // Build status bar (on main thread)
+    // ── Build status bar ──
     let app = {
         let vm_guard = vm.lock().unwrap();
-        StatusBarApp::new(mtm, &icon_path, &vm_guard)
+        StatusBarApp::new(mtm, ICON_BYTES, &vm_guard)
     };
-    let app = Arc::new(app);
 
-    // If first run, mark it complete now
+    // Save config if first run
     if first_run {
         let mut new_cfg = cfg.clone();
         new_cfg.first_run_completed = true;
@@ -71,60 +74,27 @@ fn main() {
         config::save_config(&new_cfg);
     }
 
-    // Spawn background scheduler
+    // Wire menu actions to the shared state
+    StatusBarApp::wire_actions(&app, &vm, mtm);
+
+    let app = Arc::new(app);
+
+    // ── Background scheduler ──
     let app_clone = Arc::clone(&app);
     let vm_clone = Arc::clone(&vm);
     std::thread::spawn(move || {
-        let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
-        rt.block_on(async {
-            scheduler::run(app_clone, vm_clone).await;
-        });
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        rt.block_on(scheduler::run(app_clone, vm_clone));
     });
 
-    // Run the Cocoa event loop on the main thread.
-    // The Arc is intentionally leaked — the app lives until Quit terminates the process.
-    let _ = Arc::into_raw(app);
+    // Run event loop — NSApp::run never returns, terminates process on Quit
+    log::info!("Entering Cocoa event loop");
+    let ns_app = NSApplication::sharedApplication(mtm);
 
-    let ns_app = objc2_app_kit::NSApplication::sharedApplication(mtm);
+    // These Arcs are intentionally "leaked" — the app lives until the user quits
+    // via the menu, at which point the process terminates.
+    Box::leak(Box::new(app));
+    drop(vm);
+
     ns_app.run();
-}
-
-fn resolve_icon_path() -> String {
-    // Try common locations for the icon
-    let candidates = [
-        // Running from project root (dev)
-        "icons/statusbar_template.png".to_string(),
-        // Running from .app bundle Resources/
-        {
-            if let Ok(exe) = std::env::current_exe() {
-                if let Some(bundle) = exe
-                    .parent() // MacOS/
-                    .and_then(|p| p.parent()) // Contents/
-                    .and_then(|p| p.parent()) // .app/
-                {
-                    format!(
-                        "{}/Contents/Resources/statusbar_template.png",
-                        bundle.display()
-                    )
-                } else {
-                    String::new()
-                }
-            } else {
-                String::new()
-            }
-        },
-        // Running via cargo from cc-switch directory
-        "../cc-switch/src-tauri/icons/tray/macos/statusbar_template_3x.png".to_string(),
-    ];
-
-    for path in &candidates {
-        if !path.is_empty() && std::path::Path::new(path).exists() {
-            log::info!("Using icon: {path}");
-            return path.clone();
-        }
-    }
-
-    // Fallback: return the first path anyway (will use text title)
-    log::warn!("No icon found, using text fallback");
-    candidates[0].clone()
 }

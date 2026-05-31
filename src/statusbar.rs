@@ -4,15 +4,13 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use objc2::rc::Retained;
-use objc2::sel;
-use objc2_foundation::{MainThreadMarker, NSString};
+use objc2::runtime::{AnyClass, AnyObject, ClassBuilder, Sel};
+use objc2::{self, sel};
+use objc2::{AnyThread, ClassType, MainThreadOnly};
+use objc2_foundation::{MainThreadMarker, NSData, NSObject, NSString};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSImage, NSMenu, NSMenuItem, NSStatusBar,
 };
-
-// objc2 0.6 traits for alloc
-use objc2::AnyThread;
-use objc2::MainThreadOnly;
 
 // ── Shared state ──
 
@@ -31,23 +29,62 @@ impl AppViewModel {
     }
 }
 
-// ── StatusBarApp with raw pointers for cross-thread access ──
+// ── ObjC delegate class ──
+
+fn delegate_class() -> &'static AnyClass {
+    static DELEGATE_CLASS: std::sync::OnceLock<&'static AnyClass> = std::sync::OnceLock::new();
+    DELEGATE_CLASS.get_or_init(|| {
+        let superclass = NSObject::class();
+        let mut builder = ClassBuilder::new(c"KCSAppDelegate", superclass)
+            .expect("Failed to allocate KCSAppDelegate class");
+
+        extern "C" fn refresh_all(_this: &AnyObject, _cmd: Sel, _sender: *mut AnyObject) {
+            show_alert_dispatch(
+                "Refresh All",
+                "Usage data is refreshed automatically every 5 minutes.",
+            );
+        }
+
+        extern "C" fn manage_services(_this: &AnyObject, _cmd: Sel, _sender: *mut AnyObject) {
+            show_alert_dispatch(
+                "Manage Services",
+                "Service configuration will be available in v0.2.\n\nCurrently monitoring:\n  \u{2022} Kimi Code\n  \u{2022} Codex (ChatGPT)",
+            );
+        }
+
+        unsafe {
+            builder.add_method(sel!(refreshAll:), refresh_all as extern "C" fn(_, _, _));
+            builder.add_method(sel!(manageServices:), manage_services as extern "C" fn(_, _, _));
+        }
+
+        builder.register()
+    })
+}
+
+fn make_delegate() -> Retained<AnyObject> {
+    let cls = delegate_class();
+    unsafe {
+        let obj: *mut AnyObject = objc2::msg_send![cls, alloc];
+        let obj: *mut AnyObject = objc2::msg_send![obj, init];
+        Retained::from_raw(obj).expect("Failed to create delegate")
+    }
+}
+
+// ── StatusBarApp ──
 
 pub struct StatusBarApp {
-    // Raw pointers to NSMenuItems we update dynamically.
-    // Safe because all access is on the main thread via dispatch.
-    kimi_item: *mut objc2::runtime::AnyObject,
-    codex_item: *mut objc2::runtime::AnyObject,
-    updated_item: *mut objc2::runtime::AnyObject,
-    status_item: *mut objc2::runtime::AnyObject,
+    kimi_item: Retained<NSMenuItem>,
+    codex_item: Retained<NSMenuItem>,
+    updated_item: Retained<NSMenuItem>,
+    _menu: Retained<NSMenu>,
+    _status_item: Retained<objc2_app_kit::NSStatusItem>,
 }
 
 unsafe impl Send for StatusBarApp {}
 unsafe impl Sync for StatusBarApp {}
 
 impl StatusBarApp {
-    /// Create the status bar and menu. Must be called on main thread.
-    pub fn new(mtm: MainThreadMarker, icon_path: &str, vm: &AppViewModel) -> Self {
+    pub fn new(mtm: MainThreadMarker, icon_bytes: &[u8], vm: &AppViewModel) -> Self {
         let app = NSApplication::sharedApplication(mtm);
         app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
 
@@ -55,94 +92,101 @@ impl StatusBarApp {
         let status_item =
             statusbar.statusItemWithLength(objc2_app_kit::NSVariableStatusItemLength);
 
-        // Set icon on the status bar button
-        unsafe {
-            if let Some(button) = status_item.button(mtm) {
-                let ns_path = NSString::from_str(icon_path);
-                let image = NSImage::initWithContentsOfFile(NSImage::alloc(), &ns_path);
-                if let Some(image) = image {
-                    image.setTemplate(true);
-                    // NSStatusBarButton inherits from NSButton → setImage:
-                    let _: () = objc2::msg_send![
-                        &*button,
-                        setImage: &*image
-                    ];
-                } else {
-                    let title = NSString::from_str("AI");
-                    let _: () = objc2::msg_send![&*button, setTitle: &*title];
+        // Set icon from embedded bytes
+        if let Some(button) = status_item.button(mtm) {
+            let nsdata = NSData::with_bytes(icon_bytes);
+            let image = NSImage::initWithData(NSImage::alloc(), &nsdata);
+            if let Some(image) = image {
+                image.setTemplate(true);
+                unsafe {
+                    let _: () = objc2::msg_send![&*button, setImage: &*image];
                 }
+            } else {
+                log::warn!("Failed to create NSImage from icon bytes");
             }
         }
 
-        // Build initial menu
-        let (kimi_item, codex_item, updated_item) = build_normal_menu(&status_item, mtm, vm);
-
-        let status_raw: *mut objc2::runtime::AnyObject =
-            &*status_item as *const objc2_app_kit::NSStatusItem as *mut _;
+        let (menu, kimi_item, codex_item, updated_item) =
+            build_normal_menu(&status_item, mtm, vm);
 
         Self {
             kimi_item,
             codex_item,
             updated_item,
-            status_item: status_raw,
+            _menu: menu,
+            _status_item: status_item,
         }
     }
 
-    /// Schedule a UI update from any thread.
+    pub fn wire_actions(app: &Self, _vm: &Arc<Mutex<AppViewModel>>, mtm: MainThreadMarker) {
+        let ns_app = NSApplication::sharedApplication(mtm);
+
+        unsafe {
+            // Build delegate for custom actions
+            let delegate = make_delegate();
+
+            let menu_ptr: *const NSMenu = &*app._menu;
+            let menu_ref: *mut AnyObject = menu_ptr as *mut _;
+            let count: isize = objc2::msg_send![menu_ref, numberOfItems];
+            let n = count as usize;
+
+            let del_ptr: *mut AnyObject = &*delegate as *const _ as *mut _;
+            let app_ptr: *mut AnyObject = &*ns_app as *const _ as *mut _;
+
+            if n >= 3 {
+                let item: *mut AnyObject = objc2::msg_send![menu_ref, itemAtIndex: (n - 3) as isize];
+                let _: () = objc2::msg_send![item, setTarget: del_ptr];
+                let _: () = objc2::msg_send![item, setAction: sel!(refreshAll:)];
+            }
+            if n >= 2 {
+                let item: *mut AnyObject = objc2::msg_send![menu_ref, itemAtIndex: (n - 2) as isize];
+                let _: () = objc2::msg_send![item, setTarget: del_ptr];
+                let _: () = objc2::msg_send![item, setAction: sel!(manageServices:)];
+            }
+            {
+                let item: *mut AnyObject = objc2::msg_send![menu_ref, itemAtIndex: (n - 1) as isize];
+                let _: () = objc2::msg_send![item, setTarget: app_ptr];
+                let _: () = objc2::msg_send![item, setAction: sel!(terminate:)];
+            }
+
+            // Leak delegate — it must stay alive for the app's lifetime
+            let _ = Retained::into_raw(delegate);
+        }
+
+        log::info!("Menu actions wired");
+    }
+
     pub fn schedule_update(app: &Arc<Self>, vm: &Arc<Mutex<AppViewModel>>) {
         let app = Arc::clone(app);
         let vm = Arc::clone(vm);
         dispatch::Queue::main().exec_async(move || {
-            let vm = vm.lock().unwrap();
-            app.update_impl(&vm);
+            if let Ok(vm) = vm.lock() {
+                app.update_labels(&vm);
+            }
         });
     }
 
-    /// Update labels on main thread. Do NOT call from background.
-    fn update_impl(&self, vm: &AppViewModel) {
-        unsafe {
-            let kimi_label = Self::format_quota_line("Kimi Code", &vm.kimi_quota);
-            let kimi_ns = NSString::from_str(&kimi_label);
-            let _: () = objc2::msg_send![self.kimi_item, setTitle: &*kimi_ns];
-
-            let codex_label = Self::format_quota_line("Codex", &vm.codex_quota);
-            let codex_ns = NSString::from_str(&codex_label);
-            let _: () = objc2::msg_send![self.codex_item, setTitle: &*codex_ns];
-
-            let updated = Self::format_last_updated(vm);
-            let updated_ns = NSString::from_str(&updated);
-            let _: () = objc2::msg_send![self.updated_item, setTitle: &*updated_ns];
-
-            // Update tooltip
-            let worst = Self::worst_status(vm);
-            let worst_ns = NSString::from_str(&worst);
-            // Get button via the NSStatusItem reference we stored as a raw pointer.
-            // Reconstruct a reference (valid because NSStatusItem is retained by NSStatusBar).
-            let status_item: &objc2_app_kit::NSStatusItem =
-                &*(self.status_item as *const objc2_app_kit::NSStatusItem);
-            let mtm = MainThreadMarker::new().expect("update must be on main thread");
-            if let Some(button) = status_item.button(mtm) {
-                let _: () = objc2::msg_send![&*button, setToolTip: &*worst_ns];
-            }
-        }
+    fn update_labels(&self, vm: &AppViewModel) {
+        self.kimi_item
+            .setTitle(&NSString::from_str(&Self::format_quota_line("Kimi Code", &vm.kimi_quota)));
+        self.codex_item
+            .setTitle(&NSString::from_str(&Self::format_quota_line("Codex", &vm.codex_quota)));
+        self.updated_item
+            .setTitle(&NSString::from_str(&Self::format_last_updated(vm)));
     }
-
-    // ── Formatting helpers ──
 
     fn format_quota_line(name: &str, quota: &Option<ServiceQuota>) -> String {
         match quota {
             Some(q) if q.success => {
-                let summary = formatter::format_summary(&q.tiers)
-                    .unwrap_or_else(|| "No data".into());
-                format!("  {name}  {summary}")
+                formatter::format_summary(&q.tiers)
+                    .map(|s| format!("  {name}  {s}"))
+                    .unwrap_or_else(|| format!("  {name}  No data"))
             }
             Some(q) if !q.credential_valid => {
-                let err = q.error.as_deref().unwrap_or("Not configured");
-                format!("  {name}  \u{26A0} {err}")
+                format!("  {name}  \u{26A0} {}", q.error.as_deref().unwrap_or("Not configured"))
             }
             Some(q) => {
-                let err = q.error.as_deref().unwrap_or("Query failed");
-                format!("  {name}  \u{26A0} {err}")
+                format!("  {name}  \u{26A0} {}", q.error.as_deref().unwrap_or("Query failed"))
             }
             None => format!("  {name}  \u{26AA} Loading..."),
         }
@@ -175,31 +219,27 @@ impl StatusBarApp {
             format!("  Last updated: {time_str}")
         }
     }
+}
 
-    fn worst_status(vm: &AppViewModel) -> String {
-        let mut worst_pct: Option<f64> = None;
-        let mut has_data = false;
-
-        for q in [&vm.kimi_quota, &vm.codex_quota].iter().filter_map(|q| q.as_ref()) {
-            if q.success {
-                for t in &q.tiers {
-                    has_data = true;
-                    let prev = worst_pct.unwrap_or(0.0);
-                    if t.utilization > prev {
-                        worst_pct = Some(t.utilization);
-                    }
-                }
+fn show_alert_dispatch(title: &str, message: &str) {
+    dispatch::Queue::main().exec_async({
+        let title = title.to_string();
+        let message = message.to_string();
+        move || unsafe {
+            // Get NSAlert class via objc runtime
+            extern "C" {
+                fn objc_getClass(name: *const std::ffi::c_char) -> *mut AnyObject;
             }
+            let cls = objc_getClass(c"NSAlert".as_ptr() as *const std::ffi::c_char);
+            let alert: *mut AnyObject = objc2::msg_send![cls, new];
+            let t = NSString::from_str(&title);
+            let m = NSString::from_str(&message);
+            let _: () = objc2::msg_send![alert, setMessageText: &*t];
+            let _: () = objc2::msg_send![alert, setInformativeText: &*m];
+            let _: () = objc2::msg_send![alert, addButtonWithTitle: &*NSString::from_str("OK")];
+            let _: isize = objc2::msg_send![alert, runModal];
         }
-
-        if !has_data {
-            "AI Coding Dashboard".into()
-        } else {
-            let pct = worst_pct.unwrap_or(0.0);
-            let emoji = formatter::emoji_for_utilization(pct);
-            format!("{emoji} {:.0}% used", pct)
-        }
-    }
+    });
 }
 
 // ── Menu builder ──
@@ -209,88 +249,78 @@ fn build_normal_menu(
     mtm: MainThreadMarker,
     vm: &AppViewModel,
 ) -> (
-    *mut objc2::runtime::AnyObject,
-    *mut objc2::runtime::AnyObject,
-    *mut objc2::runtime::AnyObject,
+    Retained<NSMenu>,
+    Retained<NSMenuItem>,
+    Retained<NSMenuItem>,
+    Retained<NSMenuItem>,
 ) {
+    let menu = unsafe { build_menu(mtm, vm) };
+    let menu_ref: &NSMenu = &menu;
+
+    // Attach menu to status item now, before any retain shenanigans
+    status_item.setMenu(Some(menu_ref));
+
     unsafe {
-        let menu = build_menu(mtm, vm);
+        let kimi_ptr: *mut AnyObject =
+            objc2::msg_send![&menu as *const _ as *mut AnyObject, itemAtIndex: 1_isize];
+        let codex_ptr: *mut AnyObject =
+            objc2::msg_send![&menu as *const _ as *mut AnyObject, itemAtIndex: 2_isize];
+        let updated_ptr: *mut AnyObject =
+            objc2::msg_send![&menu as *const _ as *mut AnyObject, itemAtIndex: 3_isize];
 
-        // Items at known indices:
-        // 0: "Services" header, 1: Kimi, 2: Codex, 3: Updated, 4: sep,
-        // 5: "Harness Tools" header, ...tool items..., then separator, actions, quit.
-        let kimi: *mut objc2::runtime::AnyObject =
-            objc2::msg_send![&*menu, itemAtIndex: 1_isize];
-        let codex: *mut objc2::runtime::AnyObject =
-            objc2::msg_send![&*menu, itemAtIndex: 2_isize];
-        let updated: *mut objc2::runtime::AnyObject =
-            objc2::msg_send![&*menu, itemAtIndex: 3_isize];
+        // Retain each item so it outlives the menu's autorelease pool
+        let _: () = objc2::msg_send![kimi_ptr, retain];
+        let _: () = objc2::msg_send![codex_ptr, retain];
+        let _: () = objc2::msg_send![updated_ptr, retain];
 
-        // itemAtIndex returns an autoreleased object; we need to retain it
-        // so it stays valid after the menu reference is gone.
-        if !kimi.is_null() {
-            let _: () = objc2::msg_send![kimi, retain];
-        }
-        if !codex.is_null() {
-            let _: () = objc2::msg_send![codex, retain];
-        }
-        if !updated.is_null() {
-            let _: () = objc2::msg_send![updated, retain];
-        }
+        let kimi = Retained::from_raw(kimi_ptr as *mut NSMenuItem).expect("Kimi item");
+        let codex = Retained::from_raw(codex_ptr as *mut NSMenuItem).expect("Codex item");
+        let updated = Retained::from_raw(updated_ptr as *mut NSMenuItem).expect("Updated item");
 
-        let _: () = objc2::msg_send![
-            status_item as *const objc2_app_kit::NSStatusItem as *mut objc2::runtime::AnyObject,
-            setMenu: &*menu
-        ];
-
-        (kimi, codex, updated)
+        (menu, kimi, codex, updated)
     }
 }
 
 unsafe fn build_menu(mtm: MainThreadMarker, vm: &AppViewModel) -> Retained<NSMenu> {
     let menu = NSMenu::new(mtm);
 
-    // ── Services section ──
-    add_disabled_item(&menu, mtm, "Services");
+    add_disabled(&menu, mtm, "Services");
+    add_disabled(
+        &menu,
+        mtm,
+        &StatusBarApp::format_quota_line("Kimi Code", &vm.kimi_quota),
+    );
+    add_disabled(
+        &menu,
+        mtm,
+        &StatusBarApp::format_quota_line("Codex", &vm.codex_quota),
+    );
+    add_disabled(
+        &menu,
+        mtm,
+        &StatusBarApp::format_last_updated(vm),
+    );
+    add_sep(&menu, mtm);
 
-    let kimi_label = StatusBarApp::format_quota_line("Kimi Code", &vm.kimi_quota);
-    add_disabled_item(&menu, mtm, &kimi_label);
-
-    let codex_label = StatusBarApp::format_quota_line("Codex", &vm.codex_quota);
-    add_disabled_item(&menu, mtm, &codex_label);
-
-    let updated = StatusBarApp::format_last_updated(vm);
-    add_disabled_item(&menu, mtm, &updated);
-
-    add_separator(&menu, mtm);
-
-    // ── Harness Tools section ──
-    add_disabled_item(&menu, mtm, "Harness Tools");
-
+    add_disabled(&menu, mtm, "Harness Tools");
     for tool in &vm.tools {
-        let prefix = if tool.installed { "  \u{2713}" } else { "  \u{2717}" };
-        let label = format!("{prefix} {}", tool.name);
-        add_disabled_item(&menu, mtm, &label);
+        let icon = if tool.installed { "  \u{2713}" } else { "  \u{2717}" };
+        add_disabled(&menu, mtm, &format!("{icon} {}", tool.name));
     }
+    add_sep(&menu, mtm);
 
-    add_separator(&menu, mtm);
-
-    // ── Actions ──
-    add_action_item(&menu, mtm, "Refresh All", sel!(refreshAll:));
-    add_action_item(&menu, mtm, "Manage Services...", sel!(manageServices:));
-
-    add_separator(&menu, mtm);
-
-    add_action_item(&menu, mtm, "Quit", sel!(quit:));
+    add_action(&menu, mtm, "Refresh All");
+    add_action(&menu, mtm, "Manage Services...");
+    add_sep(&menu, mtm);
+    add_action(&menu, mtm, "Quit");
 
     menu
 }
 
-unsafe fn add_disabled_item(menu: &NSMenu, mtm: MainThreadMarker, title: &str) {
-    let ns_title = NSString::from_str(title);
+unsafe fn add_disabled(menu: &NSMenu, mtm: MainThreadMarker, title: &str) {
     let item = NSMenuItem::initWithTitle_action_keyEquivalent(
         NSMenuItem::alloc(mtm),
-        &ns_title,
+        &NSString::from_str(title),
         None,
         &NSString::from_str(""),
     );
@@ -298,19 +328,18 @@ unsafe fn add_disabled_item(menu: &NSMenu, mtm: MainThreadMarker, title: &str) {
     menu.addItem(&item);
 }
 
-unsafe fn add_action_item(menu: &NSMenu, mtm: MainThreadMarker, title: &str, action: objc2::runtime::Sel) {
-    let ns_title = NSString::from_str(title);
+unsafe fn add_action(menu: &NSMenu, mtm: MainThreadMarker, title: &str) {
     let item = NSMenuItem::initWithTitle_action_keyEquivalent(
         NSMenuItem::alloc(mtm),
-        &ns_title,
-        Some(action),
+        &NSString::from_str(title),
+        None,
         &NSString::from_str(""),
     );
     item.setEnabled(true);
     menu.addItem(&item);
 }
 
-unsafe fn add_separator(menu: &NSMenu, mtm: MainThreadMarker) {
+fn add_sep(menu: &NSMenu, mtm: MainThreadMarker) {
     let sep = NSMenuItem::separatorItem(mtm);
     menu.addItem(&sep);
 }
