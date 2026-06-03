@@ -1,6 +1,7 @@
 use super::UsageProvider;
 use crate::types::{CredentialState, QuotaTier, ServiceQuota};
 use async_trait::async_trait;
+use std::net::{SocketAddr, TcpStream};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 // ── Types for Codex credential parsing ──
@@ -157,11 +158,8 @@ fn parse_codex_json(content: &str) -> Option<CodexCredentials> {
 
 // ── Query function (adapted from cc-switch subscription.rs:643-732) ──
 
-async fn query_codex(
-    access_token: &str,
-    account_id: Option<&str>,
-) -> ServiceQuota {
-    let client = reqwest::Client::new();
+async fn query_codex(access_token: &str, account_id: Option<&str>) -> ServiceQuota {
+    let client = codex_http_client();
 
     let mut req = client
         .get("https://chatgpt.com/backend-api/wham/usage")
@@ -245,6 +243,9 @@ async fn query_codex(
                         .unwrap_or_else(|| "unknown".to_string()),
                     utilization: used,
                     resets_at: window.reset_at.and_then(unix_ts_to_iso),
+                    used: None,
+                    limit: None,
+                    remaining: None,
                 });
             }
         }
@@ -259,6 +260,31 @@ async fn query_codex(
         queried_at: Some(now_millis()),
         credential_valid: true,
     }
+}
+
+fn codex_http_client() -> reqwest::Client {
+    let mut builder = reqwest::Client::builder();
+    if local_codex_proxy_available() {
+        match reqwest::Proxy::all("http://127.0.0.1:7897") {
+            Ok(proxy) => {
+                log::info!("Codex usage request using local proxy 127.0.0.1:7897");
+                builder = builder.proxy(proxy);
+            }
+            Err(e) => log::warn!("Failed to configure Codex proxy: {e}"),
+        }
+    } else {
+        log::debug!("Codex local proxy 127.0.0.1:7897 unavailable; using direct connection");
+    }
+
+    builder.build().unwrap_or_else(|e| {
+        log::warn!("Failed to build Codex HTTP client, falling back to default client: {e}");
+        reqwest::Client::new()
+    })
+}
+
+fn local_codex_proxy_available() -> bool {
+    let addr = SocketAddr::from(([127, 0, 0, 1], 7897));
+    TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(200)).is_ok()
 }
 
 // ── Codex Provider ──
@@ -304,7 +330,9 @@ impl UsageProvider for CodexProvider {
                     display_name: "Codex".into(),
                     success: false,
                     tiers: vec![],
-                    error: Some("Codex OAuth credentials not found. Login with Codex CLI first.".into()),
+                    error: Some(
+                        "Codex OAuth credentials not found. Login with Codex CLI first.".into(),
+                    ),
                     queried_at: None,
                     credential_valid: false,
                 };

@@ -27,8 +27,7 @@ fn extract_reset_time(value: &serde_json::Value) -> Option<String> {
         let ms = if n < 1_000_000_000_000 { n * 1000 } else { n };
         let secs = ms / 1000;
         let nsecs = ((ms % 1000) * 1_000_000) as u32;
-        return chrono::DateTime::from_timestamp(secs, nsecs)
-            .map(|dt| dt.to_rfc3339());
+        return chrono::DateTime::from_timestamp(secs, nsecs).map(|dt| dt.to_rfc3339());
     }
     None
 }
@@ -192,6 +191,9 @@ async fn query_kimi(api_key: &str) -> ServiceQuota {
                     name: "five_hour".to_string(),
                     utilization,
                     resets_at,
+                    used: Some(used),
+                    limit: Some(limit),
+                    remaining: Some(remaining),
                 });
             }
         }
@@ -213,6 +215,9 @@ async fn query_kimi(api_key: &str) -> ServiceQuota {
             name: "weekly_limit".to_string(),
             utilization,
             resets_at,
+            used: Some(used),
+            limit: Some(limit),
+            remaining: Some(remaining),
         });
     }
 

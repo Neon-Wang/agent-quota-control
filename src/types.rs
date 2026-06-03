@@ -11,6 +11,39 @@ pub struct QuotaTier {
     pub utilization: f64,
     /// ISO 8601 重置时间
     pub resets_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub used: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remaining: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SufficiencyState {
+    Enough,
+    Tight,
+    NotEnough,
+    Unknown,
+}
+
+impl SufficiencyState {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Enough => "够用",
+            Self::Tight => "偏紧",
+            Self::NotEnough => "不够",
+            Self::Unknown => "未知",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct QuotaEstimate {
+    pub state: SufficiencyState,
+    pub projected_utilization: Option<f64>,
+    pub reset_in_secs: Option<i64>,
+    pub lasts_for_secs: Option<i64>,
 }
 
 /// 统一用量查询结果

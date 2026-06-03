@@ -3,6 +3,7 @@
 use std::sync::{Arc, Mutex};
 
 mod config;
+mod estimator;
 mod formatter;
 mod harness;
 mod keychain;
@@ -11,8 +12,8 @@ mod scheduler;
 mod statusbar;
 mod types;
 
-use objc2_foundation::MainThreadMarker;
 use objc2_app_kit::NSApplication;
+use objc2_foundation::MainThreadMarker;
 
 use statusbar::{AppViewModel, StatusBarApp};
 
@@ -25,12 +26,20 @@ fn main() {
 
     let mtm = MainThreadMarker::new().expect("must run on main thread");
 
-    let cfg = config::load_config();
+    let mut cfg = config::load_config();
     let tools = harness::scan_tools();
-    let selected_tools = cfg.selected_tools.clone();
+    let selected_tools = if cfg.selected_tools.is_empty() {
+        let selected_tools = tools.iter().map(|tool| tool.id.clone()).collect::<Vec<_>>();
+        cfg.selected_tools = selected_tools.clone();
+        config::save_config(&cfg);
+        selected_tools
+    } else {
+        cfg.selected_tools.clone()
+    };
 
     let vm = Arc::new(Mutex::new(AppViewModel {
         first_run: !cfg.first_run_completed,
+        selected_services: cfg.selected_services.clone(),
         tools,
         selected_tools,
         ..Default::default()
@@ -42,6 +51,7 @@ fn main() {
     };
 
     let app = Arc::new(app);
+    statusbar::set_app_context(Arc::clone(&app), Arc::clone(&vm));
 
     // Background scheduler
     let app_clone = Arc::clone(&app);
