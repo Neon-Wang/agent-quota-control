@@ -4,13 +4,13 @@ use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use objc2::MainThreadOnly;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Sel};
 use objc2::sel;
-use objc2::MainThreadOnly;
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSControlStateValueOff, NSControlStateValueOn,
-    NSImage, NSMenu, NSMenuItem, NSStatusBar,
+    NSImage, NSMenu, NSMenuItem, NSStatusBar, NSStatusItem,
 };
 use objc2_foundation::{MainThreadMarker, NSString};
 
@@ -28,7 +28,8 @@ pub struct AppViewModel {
 }
 
 pub struct StatusBarApp {
-    status_item: Retained<objc2_app_kit::NSStatusItem>,
+    kimi_status_item: Retained<NSStatusItem>,
+    codex_status_item: Retained<NSStatusItem>,
     _delegate: Retained<AnyObject>,
 }
 
@@ -105,99 +106,6 @@ fn find_app_icon(name: &str) -> Option<Retained<NSImage>> {
         }
     }
     None
-}
-
-/// Cache key for an icon: uses the launch name or .app name.
-fn get_or_load_icon(
-    cache: &mut std::collections::HashMap<String, Retained<NSImage>>,
-    name: &str,
-) -> Option<*mut AnyObject> {
-    if let Some(icon) = cache.get(name) {
-        return Some(icon as *const _ as *mut _);
-    }
-    if let Some(icon) = find_app_icon(name) {
-        let ptr = &*icon as *const NSImage as *mut AnyObject;
-        cache.insert(name.to_string(), icon);
-        return Some(ptr);
-    }
-    None
-}
-
-fn load_status_icon(vm: &AppViewModel) -> Option<Retained<NSImage>> {
-    let kimi_icon = vm
-        .selected_services
-        .iter()
-        .any(|service| service == "kimi")
-        .then(|| find_app_icon("Kimi"))
-        .flatten();
-    let codex_icon = vm
-        .selected_services
-        .iter()
-        .any(|service| service == "codex")
-        .then(|| find_app_icon("Codex"))
-        .flatten();
-
-    match (kimi_icon, codex_icon) {
-        (Some(kimi), Some(codex)) => compose_status_icons(&kimi, &codex).or(Some(kimi)),
-        (Some(kimi), None) => Some(kimi),
-        (None, Some(codex)) => Some(codex),
-        (None, None) => load_fallback_status_icon(),
-    }
-}
-
-#[allow(deprecated)]
-fn compose_status_icons(left: &NSImage, right: &NSImage) -> Option<Retained<NSImage>> {
-    unsafe {
-        let size = objc2_foundation::NSSize {
-            width: 34.0,
-            height: 16.0,
-        };
-        let cls: *mut AnyObject = AnyClass::get(c"NSImage").unwrap() as *const _ as *mut _;
-        let image_raw: *mut AnyObject = objc2::msg_send![cls, alloc];
-        let image_raw: *mut AnyObject = objc2::msg_send![image_raw, initWithSize: size];
-        if image_raw.is_null() {
-            return None;
-        }
-        let image = Retained::from_raw(image_raw as *mut NSImage)?;
-
-        image.lockFocus();
-        let source = objc2_foundation::NSRect {
-            origin: objc2_foundation::NSPoint { x: 0.0, y: 0.0 },
-            size: objc2_foundation::NSSize {
-                width: 0.0,
-                height: 0.0,
-            },
-        };
-        let left_rect = objc2_foundation::NSRect {
-            origin: objc2_foundation::NSPoint { x: 0.0, y: 0.0 },
-            size: objc2_foundation::NSSize {
-                width: 16.0,
-                height: 16.0,
-            },
-        };
-        let right_rect = objc2_foundation::NSRect {
-            origin: objc2_foundation::NSPoint { x: 18.0, y: 0.0 },
-            size: objc2_foundation::NSSize {
-                width: 16.0,
-                height: 16.0,
-            },
-        };
-        left.drawInRect_fromRect_operation_fraction(
-            left_rect,
-            source,
-            objc2_app_kit::NSCompositingOperation::SourceOver,
-            1.0,
-        );
-        right.drawInRect_fromRect_operation_fraction(
-            right_rect,
-            source,
-            objc2_app_kit::NSCompositingOperation::SourceOver,
-            1.0,
-        );
-        image.unlockFocus();
-
-        Some(image)
-    }
 }
 
 fn load_fallback_status_icon() -> Option<Retained<NSImage>> {
@@ -530,30 +438,15 @@ impl StatusBarApp {
         let del_ptr: *mut AnyObject = &*delegate as *const _ as *mut _;
 
         let statusbar = NSStatusBar::systemStatusBar();
-        let status_item = statusbar.statusItemWithLength(objc2_app_kit::NSVariableStatusItemLength);
-
-        // Set icon + text in menu bar (icon left, text right)
-        if let Some(button) = status_item.button(mtm) {
-            unsafe {
-                let text = Self::bar_text(vm);
-                let _: () = objc2::msg_send![&*button, setTitle: &*NSString::from_str(&text)];
-
-                // Load Kimi and Codex icons, compacted into one menu bar image when both exist.
-                if let Some(ref icon) = load_status_icon(vm) {
-                    let _: () = objc2::msg_send![&*button, setImage: &**icon as *const NSImage as *mut AnyObject];
-                    // NSImageLeft = 2 (NSButton imagePosition enum)
-                    let _: () = objc2::msg_send![&*button, setImagePosition: 2_usize];
-                }
-
-                let _: () = objc2::msg_send![&*button, setToolTip: &*NSString::from_str("AI Coding Dashboard")];
-            }
-        }
-
-        let menu = Self::build_menu(mtm, vm, del_ptr);
-        status_item.setMenu(Some(&menu));
+        let codex_status_item =
+            statusbar.statusItemWithLength(objc2_app_kit::NSVariableStatusItemLength);
+        let kimi_status_item =
+            statusbar.statusItemWithLength(objc2_app_kit::NSVariableStatusItemLength);
+        Self::configure_status_items(mtm, &kimi_status_item, &codex_status_item, vm, del_ptr);
 
         Self {
-            status_item,
+            kimi_status_item,
+            codex_status_item,
             _delegate: delegate,
         }
     }
@@ -570,40 +463,134 @@ impl StatusBarApp {
 
     fn update(&self, vm: &AppViewModel) {
         let mtm = MainThreadMarker::new().expect("main thread");
-        if let Some(button) = self.status_item.button(mtm) {
-            unsafe {
-                let text = Self::bar_text(vm);
-                let _: () = objc2::msg_send![&*button, setTitle: &*NSString::from_str(&text)];
-
-                if let Some(ref icon) = load_status_icon(vm) {
-                    let _: () = objc2::msg_send![&*button, setImage: &**icon as *const NSImage as *mut AnyObject];
-                    let _: () = objc2::msg_send![&*button, setImagePosition: 2_usize];
-                }
-            }
-        }
         let del_ptr: *mut AnyObject = &*self._delegate as *const _ as *mut _;
-        let menu = Self::build_menu(mtm, vm, del_ptr);
-        self.status_item.setMenu(Some(&menu));
+        Self::configure_status_items(
+            mtm,
+            &self.kimi_status_item,
+            &self.codex_status_item,
+            vm,
+            del_ptr,
+        );
     }
 
-    /// Menu bar text: shows the tightest 5-hour percentage plus overall sufficiency.
-    fn bar_text(vm: &AppViewModel) -> String {
-        let now = crate::estimator::now_unix_secs();
-        let state =
-            crate::estimator::overall_state_for_services([&vm.kimi_quota, &vm.codex_quota], now);
-        let five_hour_pct = [&vm.kimi_quota, &vm.codex_quota]
-            .into_iter()
-            .filter_map(|q| q.as_ref())
-            .filter(|q| q.success)
-            .flat_map(|q| q.tiers.iter())
-            .filter(|t| t.name == "five_hour")
-            .map(|t| t.utilization)
-            .reduce(f64::max);
+    fn configure_status_items(
+        mtm: MainThreadMarker,
+        kimi_status_item: &NSStatusItem,
+        codex_status_item: &NSStatusItem,
+        vm: &AppViewModel,
+        del_ptr: *mut AnyObject,
+    ) {
+        let kimi_enabled = Self::service_enabled(vm, "kimi");
+        let codex_enabled = Self::service_enabled(vm, "codex");
+        let kimi_title = Self::service_bar_text(&vm.kimi_quota);
+        let codex_title = Self::service_bar_text(&vm.codex_quota);
 
-        match five_hour_pct {
-            Some(pct) => format!("h{:.0}% {}", pct.round(), state.label()),
-            None => format!("h--% {}", state.label()),
+        Self::configure_service_status_item(
+            mtm,
+            kimi_status_item,
+            &kimi_title,
+            find_app_icon("Kimi").or_else(load_fallback_status_icon),
+            "Kimi Code usage",
+            kimi_enabled,
+        );
+        Self::configure_service_status_item(
+            mtm,
+            codex_status_item,
+            &codex_title,
+            find_app_icon("Codex").or_else(load_fallback_status_icon),
+            "Codex usage",
+            codex_enabled,
+        );
+
+        let kimi_menu = Self::build_menu(mtm, vm, del_ptr);
+        kimi_status_item.setMenu(Some(&kimi_menu));
+        let codex_menu = Self::build_menu(mtm, vm, del_ptr);
+        codex_status_item.setMenu(Some(&codex_menu));
+    }
+
+    fn configure_service_status_item(
+        mtm: MainThreadMarker,
+        status_item: &NSStatusItem,
+        title: &str,
+        icon: Option<Retained<NSImage>>,
+        tooltip: &str,
+        visible: bool,
+    ) {
+        status_item.setVisible(visible);
+        if let Some(button) = status_item.button(mtm) {
+            unsafe {
+                let _: () = objc2::msg_send![&*button, setTitle: &*NSString::from_str(title)];
+                match icon.as_ref() {
+                    Some(icon) => {
+                        let _: () = objc2::msg_send![&*button, setImage: &**icon as *const NSImage as *mut AnyObject];
+                        let _: () = objc2::msg_send![&*button, setImagePosition: 2_usize];
+                    }
+                    None => {
+                        let nil_image: *mut AnyObject = std::ptr::null_mut();
+                        let _: () = objc2::msg_send![&*button, setImage: nil_image];
+                    }
+                }
+                let _: () = objc2::msg_send![&*button, setToolTip: &*NSString::from_str(tooltip)];
+            }
         }
+    }
+
+    fn service_enabled(vm: &AppViewModel, service_id: &str) -> bool {
+        vm.selected_services
+            .iter()
+            .any(|service| service == service_id)
+    }
+
+    fn service_bar_text(quota: &Option<ServiceQuota>) -> String {
+        let five_hour = Self::five_hour_text(quota);
+        let weekly_state = Self::weekly_state_text(quota);
+        format!("{five_hour} {weekly_state}")
+    }
+
+    fn five_hour_text(quota: &Option<ServiceQuota>) -> String {
+        match Self::five_hour_pct(quota) {
+            Some(pct) => format!("h{:.0}%", pct.round()),
+            None => "h--%".to_string(),
+        }
+    }
+
+    fn weekly_state_text(quota: &Option<ServiceQuota>) -> &'static str {
+        let now = crate::estimator::now_unix_secs();
+        quota
+            .as_ref()
+            .filter(|quota| quota.success)
+            .and_then(Self::weekly_tier)
+            .map(|tier| Self::short_state_label(crate::estimator::estimate_tier(tier, now).state))
+            .unwrap_or("未知")
+    }
+
+    fn short_state_label(state: crate::types::SufficiencyState) -> &'static str {
+        match state {
+            crate::types::SufficiencyState::Enough => "够",
+            crate::types::SufficiencyState::Tight => "偏紧",
+            crate::types::SufficiencyState::NotEnough => "不够",
+            crate::types::SufficiencyState::Unknown => "未知",
+        }
+    }
+
+    fn weekly_tier(quota: &ServiceQuota) -> Option<&QuotaTier> {
+        quota
+            .tiers
+            .iter()
+            .find(|tier| matches!(tier.name.as_str(), "weekly_limit" | "seven_day"))
+    }
+
+    fn five_hour_pct(quota: &Option<ServiceQuota>) -> Option<f64> {
+        quota
+            .as_ref()
+            .filter(|quota| quota.success)
+            .and_then(|quota| {
+                quota
+                    .tiers
+                    .iter()
+                    .find(|tier| tier.name == "five_hour")
+                    .map(|tier| tier.utilization)
+            })
     }
 
     fn build_menu(
@@ -747,6 +734,7 @@ impl StatusBarApp {
 
     fn service_section(menu: &NSMenu, mtm: MainThreadMarker, name: &str, q: &Option<ServiceQuota>) {
         if let Some(q) = q {
+            Self::dlbl(menu, mtm, &format!("  {name}"));
             if q.success && !q.tiers.is_empty() {
                 let now = crate::estimator::now_unix_secs();
                 for t in &q.tiers {
@@ -1010,6 +998,37 @@ impl StatusBarApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{QuotaTier, ServiceQuota};
+
+    fn iso_after_now(seconds: i64) -> String {
+        let now = crate::estimator::now_unix_secs();
+        chrono::DateTime::from_timestamp(now + seconds, 0)
+            .unwrap()
+            .to_rfc3339()
+    }
+
+    fn quota(service: &str, display_name: &str, tiers: Vec<QuotaTier>) -> ServiceQuota {
+        ServiceQuota {
+            service: service.to_string(),
+            display_name: display_name.to_string(),
+            success: true,
+            tiers,
+            error: None,
+            queried_at: Some(0),
+            credential_valid: true,
+        }
+    }
+
+    fn tier(name: &str, utilization: f64, reset_in_secs: i64) -> QuotaTier {
+        QuotaTier {
+            name: name.to_string(),
+            utilization,
+            resets_at: Some(iso_after_now(reset_in_secs)),
+            used: None,
+            limit: None,
+            remaining: None,
+        }
+    }
 
     #[test]
     fn shell_quote_handles_spaces_and_single_quotes() {
@@ -1025,5 +1044,31 @@ mod tests {
             applescript_string("cd \"/Users/test\" && echo \\ok"),
             "\"cd \\\"/Users/test\\\" && echo \\\\ok\""
         );
+    }
+
+    #[test]
+    fn section_text_uses_weekly_state_for_each_service() {
+        let vm = AppViewModel {
+            kimi_quota: Some(quota(
+                "kimi",
+                "Kimi Code",
+                vec![
+                    tier("five_hour", 99.0, 10_000),
+                    tier("weekly_limit", 20.0, 302_400),
+                ],
+            )),
+            codex_quota: Some(quota(
+                "codex",
+                "Codex",
+                vec![
+                    tier("five_hour", 1.0, 10_000),
+                    tier("seven_day", 61.0, 302_400),
+                ],
+            )),
+            ..Default::default()
+        };
+
+        assert_eq!(StatusBarApp::service_bar_text(&vm.kimi_quota), "h99% 够");
+        assert_eq!(StatusBarApp::service_bar_text(&vm.codex_quota), "h1% 不够");
     }
 }

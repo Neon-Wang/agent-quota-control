@@ -1,0 +1,19 @@
+{
+  "name": "agent-quota-control",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm tauri dev",
+    "build": "pnpm tauri build",
+    "tauri": "tauri",
+    "dev:renderer": "pnpm --dir frontend dev",
+    "build:renderer": "pnpm --dir frontend build",
+    "typecheck": "pnpm --dir frontend typecheck",
+    "test:frontend": "pnpm --dir frontend test",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.8.5"
+  }
+}
