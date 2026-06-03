@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    tags: ["v*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -16,10 +16,22 @@ env:
 
 jobs:
   check:
-    name: Check & Lint
+    name: Check, Test & Build
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -27,119 +39,46 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
 
-      - name: cargo check
-        run: cargo check
+      - name: Frontend typecheck
+        run: pnpm typecheck
 
-      - name: cargo clippy
-        run: cargo clippy -- -D warnings
+      - name: Frontend tests
+        run: pnpm test:frontend
 
-  test:
-    name: Test
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
+      - name: Rust check
+        run: cargo check --manifest-path src-tauri/Cargo.toml
 
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
 
-      - name: cargo test
-        run: cargo test
+      - name: Rust clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
-  build:
-    name: Build Release
-    runs-on: macos-latest
-    needs: [check, test]
-    steps:
-      - uses: actions/checkout@v4
+      - name: Tauri build
+        run: pnpm tauri build
 
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-release-${{ hashFiles('Cargo.lock') }}
-
-      - name: cargo build --release
-        run: cargo build --release
-
-      - name: Package .app bundle
-        run: |
-          APP="Kimi Code Status.app"
-          rm -rf "$APP"
-          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-          cp target/release/kimi-code-status "$APP/Contents/MacOS/"
-          cp icons/statusbar_template.png "$APP/Contents/Resources/"
-          cat > "$APP/Contents/Info.plist" << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>CFBundleName</key>
-            <string>Kimi Code Status</string>
-            <key>CFBundleIdentifier</key>
-            <string>io.ccswitch.kimi-code-status</string>
-            <key>CFBundleVersion</key>
-            <string>0.1.0</string>
-            <key>CFBundleExecutable</key>
-            <string>kimi-code-status</string>
-            <key>CFBundlePackageType</key>
-            <string>APPL</string>
-            <key>LSMinimumSystemVersion</key>
-            <string>13.0</string>
-            <key>LSUIElement</key>
-            <true/>
-          </dict>
-          </plist>
-          EOF
-          echo "App bundle created: $APP"
-
-      - name: Create .dmg
-        run: |
-          mkdir -p dmg
-          cp -R "Kimi Code Status.app" dmg/
-          hdiutil create -volname "Kimi Code Status" -srcfolder dmg -ov -format UDZO "Kimi Code Status.dmg"
-
-      - name: Upload .app artifact
+      - name: Upload Tauri bundles
         uses: actions/upload-artifact@v4
         with:
-          name: Kimi-Code-Status-app
-          path: "Kimi Code Status.app"
-
-      - name: Upload .dmg artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Kimi-Code-Status-dmg
-          path: "Kimi Code Status.dmg"
-
-      - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: kimi-code-status-binary
-          path: target/release/kimi-code-status
+          name: agent-quota-control-tauri-bundles
+          path: src-tauri/target/release/bundle
 
   release:
     name: GitHub Release
     runs-on: macos-latest
-    needs: [build]
+    needs: [check]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: Kimi-Code-Status-dmg
+          name: agent-quota-control-tauri-bundles
+          path: bundle
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: "Kimi Code Status.dmg"
+          files: bundle/**/*
           generate_release_notes: true
