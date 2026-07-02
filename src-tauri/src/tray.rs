@@ -12,6 +12,7 @@ pub fn create_tray(app: &AppHandle, dashboard: &DashboardState) -> Result<(), St
         KIMI_TRAY_ID,
         include_bytes!("../icons/kimi_tray.png"),
         service_title(&dashboard.kimi_quota, &dashboard.kimi_estimates),
+        kimi_tray_visible(dashboard),
         dashboard,
     )?;
     create_service_tray(
@@ -19,6 +20,7 @@ pub fn create_tray(app: &AppHandle, dashboard: &DashboardState) -> Result<(), St
         CODEX_TRAY_ID,
         include_bytes!("../icons/codex_tray.png"),
         service_title(&dashboard.codex_quota, &dashboard.codex_estimates),
+        true,
         dashboard,
     )?;
     Ok(())
@@ -29,12 +31,13 @@ fn create_service_tray(
     tray_id: &str,
     icon_bytes: &[u8],
     title: String,
+    visible: bool,
     dashboard: &DashboardState,
 ) -> Result<(), String> {
     let menu = build_menu(app, dashboard)?;
     let icon = tauri::image::Image::from_bytes(icon_bytes)
         .map_err(|e| format!("Failed to load tray icon: {e}"))?;
-    TrayIconBuilder::with_id(tray_id)
+    let tray = TrayIconBuilder::with_id(tray_id)
         .icon(icon)
         .title(title)
         .menu(&menu)
@@ -74,6 +77,8 @@ fn create_service_tray(
         })
         .build(app)
         .map_err(|e| format!("Failed to create tray: {e}"))?;
+    tray.set_visible(visible)
+        .map_err(|e| format!("Failed to set tray visibility: {e}"))?;
     Ok(())
 }
 
@@ -82,10 +87,20 @@ pub fn update_tray(app: &AppHandle, dashboard: &DashboardState) -> Result<(), St
     if let Some(tray) = app.tray_by_id(KIMI_TRAY_ID) {
         tray.set_menu(Some(menu))
             .map_err(|e| format!("Failed to update tray menu: {e}"))?;
+        let _ = tray.set_visible(kimi_tray_visible(dashboard));
         let _ = tray.set_title(Some(&service_title(
             &dashboard.kimi_quota,
             &dashboard.kimi_estimates,
         )));
+    } else if kimi_tray_visible(dashboard) {
+        create_service_tray(
+            app,
+            KIMI_TRAY_ID,
+            include_bytes!("../icons/kimi_tray.png"),
+            service_title(&dashboard.kimi_quota, &dashboard.kimi_estimates),
+            true,
+            dashboard,
+        )?;
     }
 
     let menu = build_menu(app, dashboard)?;
@@ -103,17 +118,6 @@ pub fn update_tray(app: &AppHandle, dashboard: &DashboardState) -> Result<(), St
 fn build_menu(app: &AppHandle, dashboard: &DashboardState) -> Result<Menu<tauri::Wry>, String> {
     let open = MenuItem::with_id(app, "open_dashboard", "打开控制台", true, None::<&str>)
         .map_err(|e| e.to_string())?;
-    let kimi = MenuItem::with_id(
-        app,
-        "kimi_status",
-        format!(
-            "Kimi Code: {}",
-            service_summary(&dashboard.kimi_quota, &dashboard.kimi_estimates)
-        ),
-        false,
-        None::<&str>,
-    )
-    .map_err(|e| e.to_string())?;
     let codex = MenuItem::with_id(
         app,
         "codex_status",
@@ -134,21 +138,30 @@ fn build_menu(app: &AppHandle, dashboard: &DashboardState) -> Result<Menu<tauri:
     let sep2 = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
     let sep3 = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
 
-    Menu::with_items(
-        app,
-        &[
-            &open,
-            &sep1,
-            &kimi,
-            &codex,
-            &refresh,
-            &sep2,
-            &selected_tools,
-            &sep3,
-            &quit,
-        ],
-    )
-    .map_err(|e| e.to_string())
+    let mut items: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![&open, &sep1];
+    let kimi_status;
+    if kimi_tray_visible(dashboard) {
+        kimi_status = MenuItem::with_id(
+            app,
+            "kimi_status",
+            format!(
+                "Kimi Code: {}",
+                service_summary(&dashboard.kimi_quota, &dashboard.kimi_estimates)
+            ),
+            false,
+            None::<&str>,
+        )
+        .map_err(|e| e.to_string())?;
+        items.push(&kimi_status);
+    }
+    items.push(&codex);
+    items.push(&refresh);
+    items.push(&sep2);
+    items.push(&selected_tools);
+    items.push(&sep3);
+    items.push(&quit);
+
+    Menu::with_items(app, &items).map_err(|e| e.to_string())
 }
 
 fn selected_tools_submenu(
@@ -218,6 +231,18 @@ fn service_title(quota: &Option<ServiceQuota>, estimates: &[TierEstimateView]) -
         .map(|pct| format!("h{pct:.0}%"))
         .unwrap_or_else(|| "h--%".to_string());
     format!("{h} {}", weekly_state(estimates))
+}
+
+fn kimi_tray_visible(dashboard: &DashboardState) -> bool {
+    dashboard
+        .config
+        .selected_services
+        .iter()
+        .any(|service| service == "kimi")
+        && crate::credentials::load_kimi_api_key(&dashboard.config.credentials.kimi_backend)
+            .ok()
+            .flatten()
+            .is_some()
 }
 
 fn weekly_state(estimates: &[TierEstimateView]) -> &'static str {

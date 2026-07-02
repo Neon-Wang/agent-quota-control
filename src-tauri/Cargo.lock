@@ -45,7 +45,7 @@ dependencies = [
 
 [[package]]
 name = "agent-quota-control"
-version = "0.1.0"
+version = "0.2.4"
 dependencies = [
  "aes-gcm",
  "async-trait",

@@ -108,10 +108,15 @@ pub async fn save_kimi_api_key(
 #[tauri::command]
 pub async fn clear_kimi_api_key(
     backend: KimiCredentialBackend,
+    app: tauri::AppHandle,
     state: tauri::State<'_, SharedRuntimeState>,
 ) -> Result<DashboardState, String> {
     crate::credentials::clear_kimi_api_key(&backend)?;
-    dashboard_state(&state)
+    refresh_usage_inner(&state).await?;
+    let dashboard = dashboard_state(&state)?;
+    crate::tray::update_tray(&app, &dashboard)?;
+    emit_dashboard_update(&app, &dashboard);
+    Ok(dashboard)
 }
 
 #[tauri::command]
