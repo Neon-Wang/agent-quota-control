@@ -1,5 +1,6 @@
 use crate::types::{
     QuotaEstimate, QuotaSaturationEvent, QuotaTier, ServiceQuota, SufficiencyState,
+    UsageChartPoint, UsageSample,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -8,6 +9,14 @@ const SEVEN_DAY_WINDOW_SECS: i64 = 604_800;
 const MIN_ELAPSED_SECS_FOR_PROJECTION: i64 = 900;
 const TIGHT_PROJECTED_PCT: f64 = 85.0;
 const EXHAUSTED_PROJECTED_PCT: f64 = 100.0;
+const MIN_TREND_SAMPLES: usize = 3;
+const MIN_TREND_SPAN_SECS: i64 = 30 * 60;
+const TREND_HALF_LIFE_HOURS: f64 = 4.0;
+const RAPID_MIN_SPAN_SECS: i64 = 4 * 60;
+const RAPID_MAX_SPAN_SECS: i64 = 15 * 60;
+const RAPID_MAX_AGE_SECS: i64 = 30 * 60;
+const RAPID_MIN_DELTA_PCT: f64 = 1.0;
+const RAPID_MIN_SLOPE_PCT_PER_HOUR: f64 = 6.0;
 
 pub fn now_unix_secs() -> i64 {
     SystemTime::now()
@@ -66,6 +75,7 @@ pub fn estimate_tier_with_saturation(
                 lasts_for_secs: Some(elapsed_to_saturation),
                 exhausted_at_secs: Some(event.reached_at_secs),
                 exhausted_before_reset_secs: Some((reset_at - event.reached_at_secs).max(0)),
+                ..empty_trend_fields()
             };
         }
     }
@@ -78,6 +88,7 @@ pub fn estimate_tier_with_saturation(
             lasts_for_secs: None,
             exhausted_at_secs: None,
             exhausted_before_reset_secs: None,
+            ..empty_trend_fields()
         };
     }
 
@@ -114,10 +125,254 @@ pub fn estimate_tier_with_saturation(
         lasts_for_secs: Some(lasts_for_secs),
         exhausted_at_secs: None,
         exhausted_before_reset_secs: None,
+        ..empty_trend_fields()
     }
 }
 
+pub fn estimate_recent_weekly_trend(
+    tier: &QuotaTier,
+    now_secs: i64,
+    samples: &[UsageSample],
+    saturation: Option<&QuotaSaturationEvent>,
+) -> QuotaEstimate {
+    if !is_weekly_tier(&tier.name) {
+        return estimate_tier_with_saturation(tier, now_secs, saturation);
+    }
+
+    let Some(reset_at_text) = tier.resets_at.as_deref() else {
+        return unknown_estimate();
+    };
+    let Some(reset_at) = chrono::DateTime::parse_from_rfc3339(reset_at_text)
+        .ok()
+        .map(|value| value.timestamp())
+    else {
+        return unknown_estimate();
+    };
+    let reset_in_secs = reset_at - now_secs;
+    let window_start_secs = reset_at - SEVEN_DAY_WINDOW_SECS;
+    if reset_in_secs <= 0 {
+        return QuotaEstimate {
+            reset_in_secs: Some(0),
+            window_start_secs: Some(window_start_secs),
+            window_end_secs: Some(reset_at),
+            ..unknown_estimate()
+        };
+    }
+
+    let mut observed_points = samples
+        .iter()
+        .filter(|sample| {
+            sample.tier == tier.name
+                && sample.reset_at == reset_at_text
+                && sample.observed_at_secs >= window_start_secs
+                && sample.observed_at_secs <= now_secs
+                && sample.utilization.is_finite()
+        })
+        .map(|sample| UsageChartPoint {
+            observed_at_secs: sample.observed_at_secs,
+            utilization: sample.utilization.clamp(0.0, 100.0),
+        })
+        .collect::<Vec<_>>();
+    observed_points.sort_by_key(|point| point.observed_at_secs);
+    observed_points.dedup_by_key(|point| point.observed_at_secs);
+
+    if saturation.is_some() && tier.utilization >= 100.0 {
+        let mut estimate = estimate_tier_with_saturation(tier, now_secs, saturation);
+        estimate.window_start_secs = Some(window_start_secs);
+        estimate.window_end_secs = Some(reset_at);
+        estimate.observed_span_secs = observation_span(&observed_points);
+        estimate.observed_points = observed_points;
+        return estimate;
+    }
+
+    let selected = select_rapid_change_points(&observed_points, now_secs)
+        .map(|points| (24, points))
+        .or_else(|| select_recent_points(&observed_points, now_secs, 24).map(|points| (24, points)))
+        .or_else(|| {
+            select_recent_points(&observed_points, now_secs, 48).map(|points| (48, points))
+        });
+    let Some((trend_window_hours, trend_points)) = selected else {
+        return QuotaEstimate {
+            reset_in_secs: Some(reset_in_secs),
+            observed_span_secs: observation_span(&observed_points),
+            window_start_secs: Some(window_start_secs),
+            window_end_secs: Some(reset_at),
+            observed_points,
+            ..unknown_estimate()
+        };
+    };
+    let Some(raw_slope) = weighted_slope_pct_per_hour(&trend_points) else {
+        return QuotaEstimate {
+            reset_in_secs: Some(reset_in_secs),
+            observed_span_secs: observation_span(&observed_points),
+            window_start_secs: Some(window_start_secs),
+            window_end_secs: Some(reset_at),
+            observed_points,
+            ..unknown_estimate()
+        };
+    };
+
+    let slope_pct_per_hour = raw_slope.max(0.0);
+    let utilization = tier.utilization.clamp(0.0, 100.0);
+    let remaining_hours = reset_in_secs as f64 / 3_600.0;
+    let projected_utilization = utilization + slope_pct_per_hour * remaining_hours;
+    let lasts_for_secs = if slope_pct_per_hour > 0.0 {
+        Some((((100.0 - utilization).max(0.0) / slope_pct_per_hour) * 3_600.0).round() as i64)
+    } else {
+        None
+    };
+    let state = projected_state(projected_utilization);
+    let projected_end = if projected_utilization > 100.0 {
+        UsageChartPoint {
+            observed_at_secs: now_secs + lasts_for_secs.unwrap_or(0),
+            utilization: 100.0,
+        }
+    } else {
+        UsageChartPoint {
+            observed_at_secs: reset_at,
+            utilization: projected_utilization,
+        }
+    };
+
+    QuotaEstimate {
+        state,
+        projected_utilization: Some(round_to(projected_utilization, 1)),
+        reset_in_secs: Some(reset_in_secs),
+        lasts_for_secs,
+        exhausted_at_secs: None,
+        exhausted_before_reset_secs: None,
+        slope_pct_per_hour: Some(round_to(slope_pct_per_hour, 2)),
+        trend_window_hours: Some(trend_window_hours),
+        observed_span_secs: observation_span(&trend_points),
+        window_start_secs: Some(window_start_secs),
+        window_end_secs: Some(reset_at),
+        observed_points,
+        projected_points: vec![
+            UsageChartPoint {
+                observed_at_secs: now_secs,
+                utilization,
+            },
+            projected_end,
+        ],
+    }
+}
+
+fn select_rapid_change_points(
+    points: &[UsageChartPoint],
+    now_secs: i64,
+) -> Option<Vec<UsageChartPoint>> {
+    points.windows(2).rev().find_map(|pair| {
+        let previous = &pair[0];
+        let current = &pair[1];
+        let span_secs = current
+            .observed_at_secs
+            .saturating_sub(previous.observed_at_secs);
+        let age_secs = now_secs.saturating_sub(current.observed_at_secs);
+        let delta = current.utilization - previous.utilization;
+        if !(RAPID_MIN_SPAN_SECS..=RAPID_MAX_SPAN_SECS).contains(&span_secs)
+            || !(0..=RAPID_MAX_AGE_SECS).contains(&age_secs)
+            || delta < RAPID_MIN_DELTA_PCT
+        {
+            return None;
+        }
+        let slope = delta * 3_600.0 / span_secs as f64;
+        (slope >= RAPID_MIN_SLOPE_PCT_PER_HOUR).then(|| vec![previous.clone(), current.clone()])
+    })
+}
+
+fn select_recent_points(
+    points: &[UsageChartPoint],
+    now_secs: i64,
+    hours: i64,
+) -> Option<Vec<UsageChartPoint>> {
+    let cutoff = now_secs - hours * 3_600;
+    let selected = points
+        .iter()
+        .filter(|point| point.observed_at_secs >= cutoff)
+        .cloned()
+        .collect::<Vec<_>>();
+    if selected.len() < MIN_TREND_SAMPLES
+        || observation_span(&selected).unwrap_or(0) < MIN_TREND_SPAN_SECS
+    {
+        return None;
+    }
+    Some(selected)
+}
+
+fn weighted_slope_pct_per_hour(points: &[UsageChartPoint]) -> Option<f64> {
+    let newest_at = points.last()?.observed_at_secs;
+    let weighted = points
+        .iter()
+        .map(|point| {
+            let x = (point.observed_at_secs - newest_at) as f64 / 3_600.0;
+            let age_hours = -x;
+            let weight = 0.5_f64.powf(age_hours / TREND_HALF_LIFE_HOURS);
+            (x, point.utilization, weight)
+        })
+        .collect::<Vec<_>>();
+    let weight_sum = weighted.iter().map(|(_, _, weight)| weight).sum::<f64>();
+    if weight_sum <= 0.0 || !weight_sum.is_finite() {
+        return None;
+    }
+    let mean_x = weighted
+        .iter()
+        .map(|(x, _, weight)| x * weight)
+        .sum::<f64>()
+        / weight_sum;
+    let mean_y = weighted
+        .iter()
+        .map(|(_, y, weight)| y * weight)
+        .sum::<f64>()
+        / weight_sum;
+    let numerator = weighted
+        .iter()
+        .map(|(x, y, weight)| weight * (x - mean_x) * (y - mean_y))
+        .sum::<f64>();
+    let denominator = weighted
+        .iter()
+        .map(|(x, _, weight)| weight * (x - mean_x).powi(2))
+        .sum::<f64>();
+    if denominator <= f64::EPSILON {
+        return None;
+    }
+    let slope = numerator / denominator;
+    slope.is_finite().then_some(slope)
+}
+
+fn observation_span(points: &[UsageChartPoint]) -> Option<i64> {
+    Some(
+        points
+            .last()?
+            .observed_at_secs
+            .saturating_sub(points.first()?.observed_at_secs),
+    )
+}
+
+fn projected_state(projected_utilization: f64) -> SufficiencyState {
+    if projected_utilization < TIGHT_PROJECTED_PCT {
+        SufficiencyState::Enough
+    } else if projected_utilization <= EXHAUSTED_PROJECTED_PCT {
+        SufficiencyState::Tight
+    } else {
+        SufficiencyState::NotEnough
+    }
+}
+
+fn round_to(value: f64, decimals: i32) -> f64 {
+    let factor = 10_f64.powi(decimals);
+    (value * factor).round() / factor
+}
+
 pub fn record_weekly_saturation_events(
+    quota: &ServiceQuota,
+    events: &mut Vec<QuotaSaturationEvent>,
+    now_secs: i64,
+) {
+    record_weekly_saturation_events_for(&quota.service, quota, events, now_secs);
+}
+
+pub fn record_weekly_saturation_events_for(
+    service_key: &str,
     quota: &ServiceQuota,
     events: &mut Vec<QuotaSaturationEvent>,
     now_secs: i64,
@@ -134,11 +389,11 @@ pub fn record_weekly_saturation_events(
             continue;
         }
         let exists = events.iter().any(|event| {
-            event.service == quota.service && event.tier == tier.name && event.reset_at == *reset_at
+            event.service == service_key && event.tier == tier.name && event.reset_at == *reset_at
         });
         if !exists {
             events.push(QuotaSaturationEvent {
-                service: quota.service.clone(),
+                service: service_key.to_string(),
                 tier: tier.name.clone(),
                 reset_at: reset_at.clone(),
                 reached_at_secs: now_secs,
@@ -196,6 +451,25 @@ fn unknown_estimate() -> QuotaEstimate {
         lasts_for_secs: None,
         exhausted_at_secs: None,
         exhausted_before_reset_secs: None,
+        ..empty_trend_fields()
+    }
+}
+
+fn empty_trend_fields() -> QuotaEstimate {
+    QuotaEstimate {
+        state: SufficiencyState::Unknown,
+        projected_utilization: None,
+        reset_in_secs: None,
+        lasts_for_secs: None,
+        exhausted_at_secs: None,
+        exhausted_before_reset_secs: None,
+        slope_pct_per_hour: None,
+        trend_window_hours: None,
+        observed_span_secs: None,
+        window_start_secs: None,
+        window_end_secs: None,
+        observed_points: Vec::new(),
+        projected_points: Vec::new(),
     }
 }
 
@@ -223,7 +497,7 @@ fn state_rank(state: SufficiencyState) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{QuotaTier, ServiceQuota, SufficiencyState};
+    use crate::types::{QuotaTier, ServiceQuota, SufficiencyState, UsageSample};
 
     fn iso_after(now: i64, seconds: i64) -> String {
         chrono::DateTime::from_timestamp(now + seconds, 0)
@@ -240,6 +514,175 @@ mod tests {
             limit: None,
             remaining: None,
         }
+    }
+
+    fn sample(
+        service: &str,
+        tier: &QuotaTier,
+        observed_at_secs: i64,
+        utilization: f64,
+    ) -> UsageSample {
+        UsageSample {
+            service: service.to_string(),
+            tier: tier.name.clone(),
+            reset_at: tier.resets_at.clone().unwrap(),
+            observed_at_secs,
+            utilization,
+        }
+    }
+
+    #[test]
+    fn recent_spike_drives_weekly_forecast_instead_of_old_cycle_average() {
+        let now = 1_700_000_000;
+        let weekly = tier("seven_day", 90.0, Some(86_400), now);
+        let samples = vec![
+            sample("codex", &weekly, now - 23 * 3_600, 20.0),
+            sample("codex", &weekly, now - 12 * 3_600, 20.0),
+            sample("codex", &weekly, now - 4 * 3_600, 25.0),
+            sample("codex", &weekly, now - 2 * 3_600, 60.0),
+            sample("codex", &weekly, now, 90.0),
+        ];
+
+        let estimate = estimate_recent_weekly_trend(&weekly, now, &samples, None);
+
+        assert_eq!(estimate.trend_window_hours, Some(24));
+        assert!(estimate.slope_pct_per_hour.unwrap() > 5.0);
+        assert_eq!(estimate.state, SufficiencyState::NotEnough);
+        assert!(estimate.projected_utilization.unwrap() > 100.0);
+    }
+
+    #[test]
+    fn recent_forecast_ignores_old_burst_outside_the_selected_window() {
+        let now = 1_700_000_000;
+        let weekly = tier("weekly_limit", 62.0, Some(86_400), now);
+        let samples = vec![
+            sample("kimi", &weekly, now - 5 * 86_400, 0.0),
+            sample("kimi", &weekly, now - 4 * 86_400, 60.0),
+            sample("kimi", &weekly, now - 20 * 3_600, 60.0),
+            sample("kimi", &weekly, now - 10 * 3_600, 61.0),
+            sample("kimi", &weekly, now, 62.0),
+        ];
+
+        let estimate = estimate_recent_weekly_trend(&weekly, now, &samples, None);
+
+        assert_eq!(estimate.trend_window_hours, Some(24));
+        assert!(estimate.slope_pct_per_hour.unwrap() < 0.2);
+        assert_eq!(estimate.state, SufficiencyState::Enough);
+    }
+
+    #[test]
+    fn recent_forecast_falls_back_to_forty_eight_hours() {
+        let now = 1_700_000_000;
+        let weekly = tier("seven_day", 35.0, Some(172_800), now);
+        let samples = vec![
+            sample("codex", &weekly, now - 36 * 3_600, 20.0),
+            sample("codex", &weekly, now - 30 * 3_600, 23.0),
+            sample("codex", &weekly, now, 35.0),
+        ];
+
+        let estimate = estimate_recent_weekly_trend(&weekly, now, &samples, None);
+
+        assert_eq!(estimate.trend_window_hours, Some(48));
+        assert!(estimate.slope_pct_per_hour.unwrap() > 0.0);
+    }
+
+    #[test]
+    fn recent_forecast_waits_when_short_samples_do_not_show_a_meaningful_spike() {
+        let now = 1_700_000_000;
+        let weekly = tier("seven_day", 35.0, Some(172_800), now);
+        let samples = vec![
+            sample("codex", &weekly, now - 600, 34.0),
+            sample("codex", &weekly, now - 300, 34.5),
+            sample("codex", &weekly, now, 35.0),
+        ];
+
+        let estimate = estimate_recent_weekly_trend(&weekly, now, &samples, None);
+
+        assert_eq!(estimate.state, SufficiencyState::Unknown);
+        assert_eq!(estimate.slope_pct_per_hour, None);
+        assert_eq!(estimate.observed_points.len(), 3);
+    }
+
+    #[test]
+    fn rapid_forecast_uses_a_two_percent_jump_over_five_minutes() {
+        let now = 1_700_000_000;
+        let weekly = tier("seven_day", 28.0, Some(172_800), now);
+        let samples = vec![
+            sample("codex", &weekly, now - 300, 26.0),
+            sample("codex", &weekly, now, 28.0),
+        ];
+
+        let estimate = estimate_recent_weekly_trend(&weekly, now, &samples, None);
+
+        assert_eq!(estimate.slope_pct_per_hour, Some(24.0));
+        assert_eq!(estimate.observed_span_secs, Some(300));
+        assert_ne!(estimate.state, SufficiencyState::Unknown);
+        assert!(estimate.lasts_for_secs.is_some());
+    }
+
+    #[test]
+    fn rapid_forecast_keeps_a_recent_jump_active_after_a_flat_follow_up() {
+        let now = 1_700_000_000;
+        let weekly = tier("seven_day", 28.0, Some(172_800), now);
+        let samples = vec![
+            sample("codex", &weekly, now - 600, 26.0),
+            sample("codex", &weekly, now - 300, 28.0),
+            sample("codex", &weekly, now, 28.0),
+        ];
+
+        let estimate = estimate_recent_weekly_trend(&weekly, now, &samples, None);
+
+        assert_eq!(estimate.slope_pct_per_hour, Some(24.0));
+        assert_eq!(estimate.observed_span_secs, Some(300));
+        assert_ne!(estimate.state, SufficiencyState::Unknown);
+    }
+
+    #[test]
+    fn rapid_forecast_rejects_refreshes_that_are_too_close_together() {
+        let now = 1_700_000_000;
+        let weekly = tier("seven_day", 28.0, Some(172_800), now);
+        let samples = vec![
+            sample("codex", &weekly, now - 60, 26.0),
+            sample("codex", &weekly, now, 28.0),
+        ];
+
+        let estimate = estimate_recent_weekly_trend(&weekly, now, &samples, None);
+
+        assert_eq!(estimate.state, SufficiencyState::Unknown);
+        assert_eq!(estimate.slope_pct_per_hour, None);
+    }
+
+    #[test]
+    fn rapid_forecast_rejects_a_two_minute_rounding_jump() {
+        let now = 1_700_000_000;
+        let weekly = tier("seven_day", 28.0, Some(172_800), now);
+        let samples = vec![
+            sample("codex", &weekly, now - 120, 27.0),
+            sample("codex", &weekly, now, 28.0),
+        ];
+
+        let estimate = estimate_recent_weekly_trend(&weekly, now, &samples, None);
+
+        assert_eq!(estimate.state, SufficiencyState::Unknown);
+        assert_eq!(estimate.slope_pct_per_hour, None);
+    }
+
+    #[test]
+    fn recent_flat_usage_has_zero_slope_and_no_exhaustion_time() {
+        let now = 1_700_000_000;
+        let weekly = tier("seven_day", 40.0, Some(172_800), now);
+        let samples = vec![
+            sample("codex", &weekly, now - 2 * 3_600, 40.0),
+            sample("codex", &weekly, now - 3_600, 40.0),
+            sample("codex", &weekly, now, 40.0),
+        ];
+
+        let estimate = estimate_recent_weekly_trend(&weekly, now, &samples, None);
+
+        assert_eq!(estimate.slope_pct_per_hour, Some(0.0));
+        assert_eq!(estimate.projected_utilization, Some(40.0));
+        assert_eq!(estimate.lasts_for_secs, None);
+        assert_eq!(estimate.state, SufficiencyState::Enough);
     }
 
     #[test]
@@ -364,5 +807,27 @@ mod tests {
 
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].tier, "weekly_limit");
+    }
+
+    #[test]
+    fn records_saturation_independently_for_accounts_on_the_same_service() {
+        let now = 1_700_000_000;
+        let quota = ServiceQuota {
+            service: "codex".to_string(),
+            display_name: "Codex".to_string(),
+            success: true,
+            tiers: vec![tier("seven_day", 100.0, Some(302_400), now)],
+            error: None,
+            queried_at: None,
+            credential_valid: true,
+        };
+        let mut events = Vec::new();
+
+        record_weekly_saturation_events_for("account-one", &quota, &mut events, now);
+        record_weekly_saturation_events_for("account-two", &quota, &mut events, now + 60);
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].service, "account-one");
+        assert_eq!(events[1].service, "account-two");
     }
 }

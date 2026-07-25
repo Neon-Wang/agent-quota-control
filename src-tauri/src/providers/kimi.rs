@@ -49,6 +49,10 @@ impl KimiProvider {
         let config = crate::config::load_config();
         crate::credentials::store_kimi_api_key(key, &config.credentials.kimi_backend)
     }
+
+    pub(crate) async fn query_with_api_key(api_key: &str) -> ServiceQuota {
+        query_kimi(api_key).await
+    }
 }
 
 #[async_trait]

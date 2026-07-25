@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 // ── Usage types (adapted from cc-switch services/subscription.rs) ──
 
 /// 单个限速窗口（5小时 / 7天）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct QuotaTier {
     pub name: String,
@@ -48,6 +48,57 @@ pub struct QuotaEstimate {
     pub lasts_for_secs: Option<i64>,
     pub exhausted_at_secs: Option<i64>,
     pub exhausted_before_reset_secs: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slope_pct_per_hour: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trend_window_hours: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_span_secs: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_start_secs: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_end_secs: Option<i64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub observed_points: Vec<UsageChartPoint>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub projected_points: Vec<UsageChartPoint>,
+}
+
+impl Default for QuotaEstimate {
+    fn default() -> Self {
+        Self {
+            state: SufficiencyState::Unknown,
+            projected_utilization: None,
+            reset_in_secs: None,
+            lasts_for_secs: None,
+            exhausted_at_secs: None,
+            exhausted_before_reset_secs: None,
+            slope_pct_per_hour: None,
+            trend_window_hours: None,
+            observed_span_secs: None,
+            window_start_secs: None,
+            window_end_secs: None,
+            observed_points: Vec::new(),
+            projected_points: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageSample {
+    pub service: String,
+    pub tier: String,
+    pub reset_at: String,
+    pub observed_at_secs: i64,
+    pub utilization: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageChartPoint {
+    pub observed_at_secs: i64,
+    pub utilization: f64,
 }
 
 /// 统一用量查询结果
@@ -105,6 +156,7 @@ pub struct ToolInfo {
 pub struct DashboardState {
     pub config: AppConfig,
     pub tools: Vec<ToolInfo>,
+    pub cards: Vec<crate::widget_snapshot::CardSnapshot>,
     pub kimi_quota: Option<ServiceQuota>,
     pub codex_quota: Option<ServiceQuota>,
     pub kimi_estimates: Vec<TierEstimateView>,
@@ -132,8 +184,12 @@ pub struct ProxyStatusView {
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     pub version: u32,
+    #[serde(default = "default_accounts")]
+    pub accounts: Vec<MonitorAccount>,
     #[serde(alias = "selected_services")]
     pub selected_services: Vec<String>,
+    #[serde(default = "default_status_bar_services")]
+    pub status_bar_services: Vec<String>,
     #[serde(alias = "selected_tools")]
     pub selected_tools: Vec<String>,
     #[serde(alias = "first_run_completed")]
@@ -149,8 +205,10 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            version: 2,
+            version: 4,
+            accounts: default_accounts(),
             selected_services: vec!["kimi".to_string(), "codex".to_string()],
+            status_bar_services: default_status_bar_services(),
             selected_tools: vec![],
             first_run_completed: false,
             proxy: ProxySettings::default(),
@@ -158,6 +216,62 @@ impl Default for AppConfig {
             quota_events: QuotaEventStore::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceKind {
+    Kimi,
+    Codex,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialRef {
+    LegacyKimi,
+    LiveCodex,
+    KimiKeychain { account: String },
+    KimiVault { account: String },
+    CodexKeychain { account: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MonitorAccount {
+    pub id: String,
+    pub service: ServiceKind,
+    pub display_name: String,
+    pub provider_identity_hint: Option<String>,
+    pub credential_ref: CredentialRef,
+    pub enabled: bool,
+    pub created_at: i64,
+}
+
+fn default_accounts() -> Vec<MonitorAccount> {
+    vec![
+        MonitorAccount {
+            id: "legacy-kimi".to_string(),
+            service: ServiceKind::Kimi,
+            display_name: "Kimi Code".to_string(),
+            provider_identity_hint: None,
+            credential_ref: CredentialRef::LegacyKimi,
+            enabled: true,
+            created_at: 0,
+        },
+        MonitorAccount {
+            id: "legacy-codex".to_string(),
+            service: ServiceKind::Codex,
+            display_name: "Codex".to_string(),
+            provider_identity_hint: None,
+            credential_ref: CredentialRef::LiveCodex,
+            enabled: true,
+            created_at: 0,
+        },
+    ]
+}
+
+fn default_status_bar_services() -> Vec<String> {
+    vec!["kimi".to_string(), "codex".to_string()]
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

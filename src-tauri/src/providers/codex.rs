@@ -280,6 +280,17 @@ impl CodexProvider {
     pub fn new() -> Self {
         Self
     }
+
+    pub(crate) async fn query_with_credentials(
+        credentials: &crate::credentials::CodexAccountCredentials,
+    ) -> ServiceQuota {
+        let mut quota =
+            query_codex(&credentials.access_token, credentials.account_id.as_deref()).await;
+        if credentials.is_stale && quota.success {
+            quota.error = Some("Token may be stale (>8 days since refresh)".into());
+        }
+        quota
+    }
 }
 
 #[async_trait]

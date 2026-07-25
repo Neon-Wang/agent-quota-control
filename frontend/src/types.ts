@@ -2,6 +2,13 @@ export type ToolType = "cli" | "ide";
 export type ProxyMode = "auto" | "on" | "off";
 export type KimiCredentialBackend = "keychain" | "encrypted_vault";
 export type SufficiencyState = "enough" | "tight" | "not_enough" | "unknown";
+export type ServiceKind = "kimi" | "codex";
+export type CardStatus =
+  | "fresh"
+  | "stale"
+  | "update_failed"
+  | "login_expired"
+  | "no_data";
 
 export interface QuotaTier {
   name: string;
@@ -19,6 +26,18 @@ export interface QuotaEstimate {
   lastsForSecs?: number | null;
   exhaustedAtSecs?: number | null;
   exhaustedBeforeResetSecs?: number | null;
+  slopePctPerHour?: number | null;
+  trendWindowHours?: number | null;
+  observedSpanSecs?: number | null;
+  windowStartSecs?: number | null;
+  windowEndSecs?: number | null;
+  observedPoints?: UsageChartPoint[];
+  projectedPoints?: UsageChartPoint[];
+}
+
+export interface UsageChartPoint {
+  observedAtSecs: number;
+  utilization: number;
 }
 
 export interface ServiceQuota {
@@ -58,11 +77,23 @@ export interface CredentialSettings {
 
 export interface AppConfig {
   version: number;
+  accounts: MonitorAccount[];
   selectedServices: string[];
+  statusBarServices: string[];
   selectedTools: string[];
   firstRunCompleted: boolean;
   proxy: ProxySettings;
   credentials: CredentialSettings;
+}
+
+export interface MonitorAccount {
+  id: string;
+  service: ServiceKind;
+  displayName: string;
+  providerIdentityHint?: string | null;
+  credentialRef: unknown;
+  enabled: boolean;
+  createdAt: number;
 }
 
 export interface TierEstimateView {
@@ -81,9 +112,24 @@ export interface ProxyStatusView {
   codex: ProxyTestResult;
 }
 
+export interface CardSnapshot {
+  accountId: string;
+  service: ServiceKind;
+  serviceDisplayName: string;
+  accountDisplayName: string;
+  status: CardStatus;
+  tiers: QuotaTier[];
+  weeklyEstimate?: QuotaEstimate | null;
+  proxy: ProxyTestResult;
+  queriedAt?: number | null;
+  lastSuccessfulAt?: number | null;
+  errorMessage?: string | null;
+}
+
 export interface DashboardState {
   config: AppConfig;
   tools: ToolInfo[];
+  cards: CardSnapshot[];
   kimiQuota?: ServiceQuota | null;
   codexQuota?: ServiceQuota | null;
   kimiEstimates: TierEstimateView[];

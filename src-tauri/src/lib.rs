@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+mod accounts;
 mod commands;
 mod config;
 mod credentials;
@@ -12,7 +13,10 @@ mod proxy;
 mod scheduler;
 mod tray;
 mod types;
+mod usage_history;
 mod vault;
+mod widget_reload;
+mod widget_snapshot;
 
 use commands::{AppRuntimeState, SharedRuntimeState};
 use std::sync::{Arc, Mutex};
@@ -38,10 +42,15 @@ pub fn run() {
             commands::refresh_usage,
             commands::set_selected_tools,
             commands::set_selected_services,
+            commands::set_status_bar_services,
             commands::save_proxy_settings,
             commands::test_proxy,
             commands::save_kimi_api_key,
             commands::clear_kimi_api_key,
+            commands::add_kimi_account,
+            commands::import_codex_account,
+            commands::rename_account,
+            commands::remove_account,
             commands::launch_tool,
             commands::reveal_config_dir
         ])
@@ -56,6 +65,7 @@ pub fn run() {
                 }
                 if let Ok(dashboard) = commands::dashboard_state(&state) {
                     let _ = tray::update_tray(&handle, &dashboard);
+                    commands::publish_widget_snapshot(&dashboard);
                     commands::emit_dashboard_update(&handle, &dashboard);
                 }
             });

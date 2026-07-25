@@ -8,6 +8,9 @@ frontend/dist/
 
 target/
 src-tauri/target/
+src-tauri/bin/
+macos-widget/.build/
+macos-widget/build/
 
 *.dmg
 *.app

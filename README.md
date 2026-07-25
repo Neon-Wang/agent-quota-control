@@ -12,14 +12,19 @@ service monitoring, credentials, and per-service proxy settings.
 
 ## Features
 
-- Monitor Kimi Code and Codex 5-hour and 7-day quota windows.
+- Monitor one or more Kimi Code and Codex accounts and their available quota
+  windows.
 - Show reset timestamps next to each quota tier.
-- Estimate whether the current weekly usage pace is enough, tight, or likely to
-  run out.
+- Plot observed weekly utilization against time and project it from a
+  recent-weighted consumption trend.
+- Estimate whether the recent weekly usage pace is enough, tight, or likely to
+  run out, including the expected exhaustion time when applicable.
 - Freeze weekly projections after a quota first reaches 100%, so the estimate
   does not become misleading as reset time approaches.
 - Display separate Kimi and Codex menu bar items with service icons and compact
   usage summaries.
+- Add configurable native macOS widgets that select a monitored account and
+  share the dashboard's redacted quota snapshot.
 - Manage detected IDE, app, and CLI launchers from the dashboard.
 - Launch CLI tools from a chosen project folder through Ghostty, with Terminal
   fallback.
@@ -38,9 +43,11 @@ actively improved.
 Requirements:
 
 - macOS 13 or newer
+- macOS 14 or newer for the WidgetKit extension
 - Rust 1.85 or newer
 - Node.js 22 or newer
 - pnpm 10 or newer
+- Xcode and an Apple Development signing identity for a widget-enabled bundle
 
 Install dependencies:
 
@@ -54,10 +61,10 @@ Run in development:
 pnpm dev
 ```
 
-Build a release app:
+Build and sign a release app with the WidgetKit extension:
 
 ```bash
-pnpm tauri build
+pnpm build:macos-app
 ```
 
 The built app is written to:
@@ -72,11 +79,21 @@ Open the app and use the menu bar icons to access the dashboard. Closing the
 dashboard hides the window and removes the Dock icon while keeping the Kimi and
 Codex menu bar items running. Click a menu bar item to show the dashboard again.
 
+Weekly forecasts use successful observations from the most recent 24 hours,
+weighted toward newer activity. A rapid path reacts immediately when two
+observations four to fifteen minutes apart show at least one percentage point of
+growth at six percentage points per hour or faster. Otherwise, the normal path
+requires at least three observations spanning 30 minutes and expands from 24 to
+48 hours when needed. If neither path qualifies, the dashboard shows the actual
+line and waits for more trend data instead of falling back to a misleading
+full-cycle average. Observations are stored in `usage-history.json` under the
+app configuration directory and are automatically bounded and pruned.
+
 The dashboard has four sections:
 
-- Overview: Kimi Code and Codex quota cards.
+- Overview: one canonical quota card per monitored account.
 - Tools: selected launchers and available detected tools.
-- Monitoring: service toggles, Kimi API key storage, and Codex auth status.
+- Monitoring: service and menu-bar toggles plus Kimi/Codex account management.
 - Settings: proxy settings and config directory access.
 
 ## Proxy Settings
@@ -100,8 +117,10 @@ supported:
 - Encrypted Vault: stores ciphertext in the app config directory and stores the
   vault master key in macOS Keychain.
 
-Codex credentials are read from Codex CLI Keychain entries or
-`~/.codex/auth.json`. Run `codex login` if Codex usage cannot be fetched.
+Additional Kimi accounts store isolated per-account credentials. Codex accounts
+are imported from the current Codex CLI login into app-owned Keychain entries,
+so changing the CLI login does not silently replace an existing monitored
+account. Run `codex login` before importing when no valid ChatGPT login exists.
 
 ## CLI Launching
 
@@ -120,7 +139,8 @@ pnpm test:frontend
 cargo check --manifest-path src-tauri/Cargo.toml
 cargo test --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
-pnpm tauri build
+swift test --package-path macos-widget
+pnpm build:macos-app
 ```
 
 ## Repository Layout
@@ -128,7 +148,9 @@ pnpm tauri build
 ```text
 frontend/       React, Vite, TypeScript dashboard
 src-tauri/      Tauri v2 shell, tray, providers, config, credentials
-docs/           README screenshots and project documentation assets
+macos-widget/   SwiftUI, WidgetKit, App Intents, and shared snapshot decoder
+scripts/        macOS widget build, signing probe, and app packaging
+docs/           README screenshots and stable design documentation
 .github/        CI workflow
 ```
 
