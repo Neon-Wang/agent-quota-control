@@ -48,6 +48,9 @@ jobs:
       - name: Frontend tests
         run: pnpm test:frontend
 
+      - name: Build macOS widget prerequisites
+        run: bash scripts/build-macos-widget.sh
+
       - name: Rust check
         run: cargo check --manifest-path src-tauri/Cargo.toml
 
