@@ -7,7 +7,7 @@
     "frontendDist": "../frontend/dist",
     "devUrl": "http://127.0.0.1:3000",
     "beforeDevCommand": "pnpm run dev:renderer",
-    "beforeBuildCommand": "pnpm run build:renderer"
+    "beforeBuildCommand": "pnpm run build:renderer && bash scripts/build-macos-widget.sh"
   },
   "app": {
     "windows": [
@@ -39,9 +39,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": ["bin/agent-quota-widget-reload"],
     "icon": ["icons/app.icns", "icons/app-icon.png"],
     "macOS": {
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "13.0",
+      "entitlements": "Entitlements.plist"
     }
   }
 }

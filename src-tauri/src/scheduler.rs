@@ -20,6 +20,7 @@ async fn refresh_and_publish(
     crate::commands::refresh_usage_inner(state).await?;
     let dashboard = crate::commands::dashboard_state(state)?;
     crate::tray::update_tray(app, &dashboard)?;
+    crate::commands::publish_widget_snapshot(&dashboard);
     crate::commands::emit_dashboard_update(app, &dashboard);
     log::info!("Scheduled usage refresh completed");
     Ok(())

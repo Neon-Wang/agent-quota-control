@@ -20,7 +20,7 @@ pub fn create_tray(app: &AppHandle, dashboard: &DashboardState) -> Result<(), St
         CODEX_TRAY_ID,
         include_bytes!("../icons/codex_tray.png"),
         service_title(&dashboard.codex_quota, &dashboard.codex_estimates),
-        true,
+        codex_tray_visible(dashboard),
         dashboard,
     )?;
     Ok(())
@@ -107,10 +107,20 @@ pub fn update_tray(app: &AppHandle, dashboard: &DashboardState) -> Result<(), St
     if let Some(tray) = app.tray_by_id(CODEX_TRAY_ID) {
         tray.set_menu(Some(menu))
             .map_err(|e| format!("Failed to update tray menu: {e}"))?;
+        let _ = tray.set_visible(codex_tray_visible(dashboard));
         let _ = tray.set_title(Some(&service_title(
             &dashboard.codex_quota,
             &dashboard.codex_estimates,
         )));
+    } else if codex_tray_visible(dashboard) {
+        create_service_tray(
+            app,
+            CODEX_TRAY_ID,
+            include_bytes!("../icons/codex_tray.png"),
+            service_title(&dashboard.codex_quota, &dashboard.codex_estimates),
+            true,
+            dashboard,
+        )?;
     }
     Ok(())
 }
@@ -118,17 +128,6 @@ pub fn update_tray(app: &AppHandle, dashboard: &DashboardState) -> Result<(), St
 fn build_menu(app: &AppHandle, dashboard: &DashboardState) -> Result<Menu<tauri::Wry>, String> {
     let open = MenuItem::with_id(app, "open_dashboard", "打开控制台", true, None::<&str>)
         .map_err(|e| e.to_string())?;
-    let codex = MenuItem::with_id(
-        app,
-        "codex_status",
-        format!(
-            "Codex: {}",
-            service_summary(&dashboard.codex_quota, &dashboard.codex_estimates)
-        ),
-        false,
-        None::<&str>,
-    )
-    .map_err(|e| e.to_string())?;
     let refresh = MenuItem::with_id(app, "refresh_usage", "刷新用量", true, None::<&str>)
         .map_err(|e| e.to_string())?;
     let selected_tools = selected_tools_submenu(app, dashboard)?;
@@ -139,22 +138,46 @@ fn build_menu(app: &AppHandle, dashboard: &DashboardState) -> Result<Menu<tauri:
     let sep3 = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
 
     let mut items: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![&open, &sep1];
-    let kimi_status;
-    if kimi_tray_visible(dashboard) {
-        kimi_status = MenuItem::with_id(
-            app,
-            "kimi_status",
-            format!(
-                "Kimi Code: {}",
-                service_summary(&dashboard.kimi_quota, &dashboard.kimi_estimates)
-            ),
-            false,
-            None::<&str>,
+    let kimi_status = if kimi_tray_visible(dashboard) {
+        Some(
+            MenuItem::with_id(
+                app,
+                "kimi_status",
+                format!(
+                    "Kimi Code: {}",
+                    service_summary(&dashboard.kimi_quota, &dashboard.kimi_estimates)
+                ),
+                false,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?,
         )
-        .map_err(|e| e.to_string())?;
-        items.push(&kimi_status);
+    } else {
+        None
+    };
+    if let Some(item) = &kimi_status {
+        items.push(item);
     }
-    items.push(&codex);
+    let codex_status = if codex_tray_visible(dashboard) {
+        Some(
+            MenuItem::with_id(
+                app,
+                "codex_status",
+                format!(
+                    "Codex: {}",
+                    service_summary(&dashboard.codex_quota, &dashboard.codex_estimates)
+                ),
+                false,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?,
+        )
+    } else {
+        None
+    };
+    if let Some(item) = &codex_status {
+        items.push(item);
+    }
     items.push(&refresh);
     items.push(&sep2);
     items.push(&selected_tools);
@@ -227,22 +250,36 @@ fn service_summary(quota: &Option<ServiceQuota>, estimates: &[TierEstimateView])
 }
 
 fn service_title(quota: &Option<ServiceQuota>, estimates: &[TierEstimateView]) -> String {
-    let h = tier_pct(quota, "five_hour")
+    let utilization = tier_pct(quota, "five_hour")
         .map(|pct| format!("h{pct:.0}%"))
-        .unwrap_or_else(|| "h--%".to_string());
-    format!("{h} {}", weekly_state(estimates))
+        .or_else(|| weekly_pct(quota).map(|pct| format!("w{pct:.0}%")))
+        .unwrap_or_else(|| "w--%".to_string());
+    format!("{utilization} {}", weekly_state(estimates))
 }
 
 fn kimi_tray_visible(dashboard: &DashboardState) -> bool {
-    dashboard
-        .config
-        .selected_services
-        .iter()
-        .any(|service| service == "kimi")
+    service_tray_enabled(dashboard, "kimi")
         && crate::credentials::load_kimi_api_key(&dashboard.config.credentials.kimi_backend)
             .ok()
             .flatten()
             .is_some()
+}
+
+fn codex_tray_visible(dashboard: &DashboardState) -> bool {
+    service_tray_enabled(dashboard, "codex")
+}
+
+fn service_tray_enabled(dashboard: &DashboardState, service: &str) -> bool {
+    dashboard
+        .config
+        .selected_services
+        .iter()
+        .any(|id| id == service)
+        && dashboard
+            .config
+            .status_bar_services
+            .iter()
+            .any(|id| id == service)
 }
 
 fn weekly_state(estimates: &[TierEstimateView]) -> &'static str {
@@ -299,27 +336,56 @@ mod tests {
                 lasts_for_secs: None,
                 exhausted_at_secs: None,
                 exhausted_before_reset_secs: None,
+                ..Default::default()
             },
         }
     }
 
     #[test]
-    fn tray_title_uses_weekly_estimator_state_not_five_hour_or_raw_weekly_threshold() {
+    fn tray_title_uses_weekly_utilization_and_estimator_state() {
         let quota = Some(ServiceQuota {
             service: "codex".to_string(),
             display_name: "Codex".to_string(),
             success: true,
+            tiers: vec![QuotaTier {
+                name: "seven_day".to_string(),
+                utilization: 70.0,
+                resets_at: None,
+                used: None,
+                limit: None,
+                remaining: None,
+            }],
+            error: None,
+            queried_at: None,
+            credential_valid: true,
+        });
+
+        assert_eq!(
+            service_title(
+                &quota,
+                &[estimate("seven_day", SufficiencyState::NotEnough)]
+            ),
+            "w70% 不够"
+        );
+    }
+
+    #[test]
+    fn tray_title_keeps_five_hour_utilization_when_the_service_provides_it() {
+        let quota = Some(ServiceQuota {
+            service: "kimi".to_string(),
+            display_name: "Kimi Code".to_string(),
+            success: true,
             tiers: vec![
                 QuotaTier {
                     name: "five_hour".to_string(),
-                    utilization: 10.0,
+                    utilization: 12.0,
                     resets_at: None,
                     used: None,
                     limit: None,
                     remaining: None,
                 },
                 QuotaTier {
-                    name: "seven_day".to_string(),
+                    name: "weekly_limit".to_string(),
                     utilization: 70.0,
                     resets_at: None,
                     used: None,
@@ -335,9 +401,9 @@ mod tests {
         assert_eq!(
             service_title(
                 &quota,
-                &[estimate("seven_day", SufficiencyState::NotEnough)]
+                &[estimate("weekly_limit", SufficiencyState::Enough)]
             ),
-            "h10% 不够"
+            "h12% 够"
         );
     }
 }

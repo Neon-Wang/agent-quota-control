@@ -10,11 +10,10 @@ import {
   Loader2,
   RefreshCw,
   Settings,
-  Terminal,
   Wrench,
 } from "lucide-react";
 import { api } from "./api";
-import { CredentialSettings } from "./components/CredentialSettings";
+import { AccountSettings } from "./components/AccountSettings";
 import { LaunchPanel } from "./components/LaunchPanel";
 import { MonitoringSettings } from "./components/MonitoringSettings";
 import { ProxySettings } from "./components/ProxySettings";
@@ -56,10 +55,9 @@ export function App() {
   }, [state]);
 
   const lastUpdated = useMemo(() => {
-    const timestamps = [
-      state?.kimiQuota?.queriedAt,
-      state?.codexQuota?.queriedAt,
-    ].filter((value): value is number => typeof value === "number");
+    const timestamps = (state?.cards ?? [])
+      .map((card) => card.queriedAt)
+      .filter((value): value is number => typeof value === "number");
     if (timestamps.length === 0) return t.notRefreshed;
     return new Date(Math.max(...timestamps)).toLocaleTimeString();
   }, [state]);
@@ -188,20 +186,19 @@ export function App() {
 
         {state && view === "dashboard" && (
           <div className="dashboard-grid">
-            <QuotaCard
-              title="Kimi Code"
-              iconSrc={kimiIcon}
-              quota={state.kimiQuota}
-              estimates={state.kimiEstimates}
-              proxy={state.proxyStatus.kimi}
-            />
-            <QuotaCard
-              title="Codex"
-              iconSrc={codexIcon}
-              quota={state.codexQuota}
-              estimates={state.codexEstimates}
-              proxy={state.proxyStatus.codex}
-            />
+            {state.cards.map((card) => (
+              <QuotaCard
+                key={card.accountId}
+                card={card}
+                iconSrc={card.service === "kimi" ? kimiIcon : codexIcon}
+              />
+            ))}
+            {state.cards.length === 0 && (
+              <div className="dashboard-empty">
+                <h3>还没有监控账号</h3>
+                <p>在“监控”中添加 Kimi 或 Codex 账号。</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -221,18 +218,7 @@ export function App() {
         {state && view === "monitoring" && (
           <div className="settings-grid">
             <MonitoringSettings state={state} onChange={setState} />
-            <CredentialSettings state={state} onChange={setState} />
-            <section className="panel">
-              <div className="panel-title">
-                <Terminal size={16} aria-hidden />
-                Codex 登录状态
-              </div>
-              <p className="muted">
-                Codex 凭据会从 Codex CLI 的 Keychain 或
-                ~/.codex/auth.json 读取。如果无法获取用量，请先运行
-                <code>codex login</code>。
-              </p>
-            </section>
+            <AccountSettings state={state} onChange={setState} />
           </div>
         )}
 

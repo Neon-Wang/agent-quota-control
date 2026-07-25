@@ -37,30 +37,27 @@ fn parse_config(content: &str) -> (AppConfig, bool) {
         log::warn!("Failed to parse config, using defaults: {e}");
         AppConfig::default()
     });
-    let migrated = config.version < 2;
-    if config.version < 2 {
-        config.version = 2;
+    let migrated = config.version < 4;
+    if config.version < 4 {
+        config.version = 4;
     }
     (config, migrated)
 }
 
 pub fn save_config(config: &AppConfig) {
-    let dir = config_dir();
-    if let Err(e) = std::fs::create_dir_all(&dir) {
-        log::error!("Failed to create config directory: {e}");
-        return;
+    if let Err(error) = save_config_checked(config) {
+        log::error!("{error}");
     }
+}
 
-    match serde_json::to_string_pretty(config) {
-        Ok(content) => {
-            if let Err(e) = std::fs::write(config_path(), content) {
-                log::error!("Failed to write config: {e}");
-            }
-        }
-        Err(e) => {
-            log::error!("Failed to serialize config: {e}");
-        }
-    }
+pub fn save_config_checked(config: &AppConfig) -> Result<(), String> {
+    let dir = config_dir();
+    std::fs::create_dir_all(&dir)
+        .map_err(|error| format!("Failed to create config directory: {error}"))?;
+    let content = serde_json::to_string_pretty(config)
+        .map_err(|error| format!("Failed to serialize config: {error}"))?;
+    std::fs::write(config_path(), content)
+        .map_err(|error| format!("Failed to write config: {error}"))
 }
 
 #[cfg(test)]
@@ -68,7 +65,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn v1_config_migrates_to_v2_defaults() {
+    fn legacy_config_migrates_to_status_bar_defaults() {
         let (config, migrated) = parse_config(
             r#"{
                 "version": 1,
@@ -79,9 +76,32 @@ mod tests {
         );
 
         assert!(migrated);
-        assert_eq!(config.version, 2);
+        assert_eq!(config.version, 4);
         assert_eq!(config.selected_tools, vec!["codex_cli"]);
+        assert_eq!(config.status_bar_services, vec!["kimi", "codex"]);
+        assert_eq!(config.accounts.len(), 2);
+        assert_eq!(config.accounts[0].id, "legacy-kimi");
+        assert_eq!(config.accounts[0].service, crate::types::ServiceKind::Kimi);
+        assert_eq!(config.accounts[1].id, "legacy-codex");
+        assert_eq!(config.accounts[1].service, crate::types::ServiceKind::Codex);
         assert_eq!(config.proxy.kimi.auto_ports, vec![7897, 7890]);
         assert!(config.quota_events.weekly_saturation.is_empty());
+    }
+
+    #[test]
+    fn version_four_preserves_an_intentionally_empty_account_list() {
+        let (config, migrated) = parse_config(
+            r#"{
+                "version": 4,
+                "selectedServices": [],
+                "statusBarServices": [],
+                "selectedTools": [],
+                "firstRunCompleted": true,
+                "accounts": []
+            }"#,
+        );
+
+        assert!(!migrated);
+        assert!(config.accounts.is_empty());
     }
 }

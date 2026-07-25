@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": 1784620800000,
+  "accounts": [
+    {
+      "id": "kimi-work",
+      "service": "kimi",
+      "displayName": "工作 Kimi",
+      "providerIdentityHint": null
+    },
+    {
+      "id": "codex-personal",
+      "service": "codex",
+      "displayName": "个人 Codex",
+      "providerIdentityHint": "acct...work"
+    }
+  ],
+  "cardsByAccount": {
+    "kimi-work": {
+      "accountId": "kimi-work",
+      "service": "kimi",
+      "serviceDisplayName": "Kimi Code",
+      "accountDisplayName": "工作 Kimi",
+      "status": "fresh",
+      "tiers": [
+        { "name": "five_hour", "utilization": 22.0, "resetsAt": "2026-07-21T18:30:00+08:00" },
+        { "name": "weekly_limit", "utilization": 48.0, "resetsAt": "2026-07-25T08:00:00+08:00" }
+      ],
+      "weeklyEstimate": {
+        "state": "enough",
+        "projectedUtilization": 71.0,
+        "resetInSecs": 345600,
+        "lastsForSecs": null,
+        "exhaustedAtSecs": null,
+        "exhaustedBeforeResetSecs": null
+      },
+      "proxy": { "status": "direct", "proxyUrl": null, "message": "Direct" },
+      "queriedAt": 1784620800000,
+      "lastSuccessfulAt": 1784620800000,
+      "errorMessage": null
+    }
+  }
+}

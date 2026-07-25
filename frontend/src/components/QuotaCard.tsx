@@ -1,18 +1,14 @@
 import { AlertTriangle, CheckCircle2, Clock, Network } from "lucide-react";
 import type {
-  ProxyTestResult,
-  ServiceQuota,
+  CardSnapshot,
   SufficiencyState,
-  TierEstimateView,
 } from "../types";
 import { proxyDetailLabel } from "../proxyDisplay";
+import { UsageTrendChart } from "./UsageTrendChart";
 
 interface QuotaCardProps {
-  title: string;
+  card: CardSnapshot;
   iconSrc: string;
-  quota?: ServiceQuota | null;
-  estimates: TierEstimateView[];
-  proxy: ProxyTestResult;
 }
 
 const tierLabels: Record<string, string> = {
@@ -21,43 +17,59 @@ const tierLabels: Record<string, string> = {
   seven_day: "7 天",
 };
 
-export function QuotaCard({ title, iconSrc, quota, estimates, proxy }: QuotaCardProps) {
-  const weekly = quota?.tiers.find((tier) =>
+export function QuotaCard({ card, iconSrc }: QuotaCardProps) {
+  const displayState = stateLabel(card.weeklyEstimate?.state ?? "unknown");
+  const hasData = card.tiers.length > 0;
+  const isHealthy = card.status === "fresh" || card.status === "stale";
+  const weeklyTier = card.tiers.find((tier) =>
     ["weekly_limit", "seven_day"].includes(tier.name),
   );
-  const weeklyEstimate = estimates.find(
-    (entry) => entry.tier === weekly?.name,
-  )?.estimate;
-  const displayState = quota?.success
-    ? stateLabel(weeklyEstimate?.state ?? "unknown")
-    : quota
-      ? "未配置"
-      : "等待刷新";
+  const fiveHourTier = card.tiers.find((tier) => tier.name === "five_hour");
+  const remainingTiers = card.tiers.filter(
+    (tier) =>
+      tier.name !== "weekly_limit" &&
+      tier.name !== "seven_day" &&
+      tier.name !== "five_hour",
+  );
+  const orderedTiers = [weeklyTier, fiveHourTier, ...remainingTiers].filter(
+    (tier): tier is CardSnapshot["tiers"][number] => tier !== undefined,
+  );
+  const showAccountName =
+    normalizeIdentity(card.accountDisplayName) !==
+    normalizeIdentity(card.serviceDisplayName);
 
   return (
-    <section className="quota-card">
+    <section
+      className="quota-card"
+      aria-label={`${card.accountDisplayName} 配额`}
+    >
       <div className="quota-header">
         <div className="service-heading">
           <img src={iconSrc} alt="" aria-hidden />
           <div>
-            <p className="eyebrow">{title}</p>
-            <h3>{displayState}</h3>
+            <p className="eyebrow">{card.serviceDisplayName}</p>
+            <h3
+              className={`quota-state-heading quota-state-${card.weeklyEstimate?.state ?? "unknown"}`}
+            >
+              {displayState}
+            </h3>
+            {showAccountName ? (
+              <p className="account-card-name">{card.accountDisplayName}</p>
+            ) : null}
           </div>
         </div>
-        {quota?.success ? (
+        {isHealthy ? (
           <CheckCircle2 size={18} aria-hidden className="ok" />
         ) : (
           <AlertTriangle size={18} aria-hidden className="warn" />
         )}
       </div>
 
-      {!quota && <p className="muted quota-empty">等待后台首次刷新用量。</p>}
-      {quota && !quota.success && (
-        <p className="error-copy">{quota.error ?? "用量查询失败"}</p>
-      )}
-      {quota?.success && (
+      {card.errorMessage && <p className="error-copy card-status-copy">{card.errorMessage}</p>}
+      {!hasData && !card.errorMessage && <p className="muted quota-empty">等待后台首次刷新用量。</p>}
+      {hasData && (
         <div className="tier-stack">
-          {quota.tiers.map((tier) => (
+          {orderedTiers.map((tier) => (
             <div className="tier-row" key={tier.name}>
               <div className="tier-meta">
                 <span className="tier-label">
@@ -76,38 +88,48 @@ export function QuotaCard({ title, iconSrc, quota, estimates, proxy }: QuotaCard
               </div>
             </div>
           ))}
+          {weeklyTier && !fiveHourTier ? (
+            <div className="tier-unavailable" aria-label="当前无 5 小时限制">
+              <span>5 小时</span>
+              <strong>当前无 5 小时限制</strong>
+            </div>
+          ) : null}
         </div>
       )}
 
-      {quota?.success && weeklyEstimate && (
+      {hasData && card.weeklyEstimate && (
         <div className="estimate-box">
           <div>
             <span>预计用量</span>
             <strong>
-              {weeklyEstimate.projectedUtilization == null
-                ? "未知"
-                : `${Math.round(weeklyEstimate.projectedUtilization)}%`}
+              {card.weeklyEstimate.projectedUtilization == null
+                ? "积累中"
+                : `${Math.round(card.weeklyEstimate.projectedUtilization)}%`}
             </strong>
           </div>
-          {weeklyEstimate.exhaustedBeforeResetSecs != null && (
+          {card.weeklyEstimate.exhaustedBeforeResetSecs != null && (
             <p>
-              已提前 {formatDuration(weeklyEstimate.exhaustedBeforeResetSecs)} 耗尽。
+              已提前 {formatDuration(card.weeklyEstimate.exhaustedBeforeResetSecs)} 耗尽。
             </p>
           )}
-          {weeklyEstimate.exhaustedBeforeResetSecs == null && (
-            <p>{estimateHint(weeklyEstimate.state, weeklyEstimate.lastsForSecs)}</p>
+          {card.weeklyEstimate.exhaustedBeforeResetSecs == null &&
+            card.weeklyEstimate.state !== "unknown" && (
+            <p>{estimateHint(card.weeklyEstimate.state, card.weeklyEstimate.lastsForSecs)}</p>
           )}
         </div>
+      )}
+      {hasData && card.weeklyEstimate && (
+        <UsageTrendChart estimate={card.weeklyEstimate} />
       )}
 
       <div className="proxy-line">
         <Network size={13} aria-hidden />
-        <span>{proxyDetailLabel(proxy)}</span>
+        <span>{proxyDetailLabel(card.proxy)}</span>
       </div>
-      {quota?.queriedAt && (
+      {card.queriedAt && (
         <div className="proxy-line">
           <Clock size={13} aria-hidden />
-          <span>更新于 {new Date(quota.queriedAt).toLocaleTimeString()}</span>
+          <span>更新于 {new Date(card.queriedAt).toLocaleTimeString()}</span>
         </div>
       )}
     </section>
@@ -124,7 +146,11 @@ function stateLabel(state: SufficiencyState): string {
   if (state === "enough") return "够";
   if (state === "tight") return "偏紧";
   if (state === "not_enough") return "不够";
-  return "未知";
+  return "等待数据";
+}
+
+function normalizeIdentity(value: string): string {
+  return value.trim().toLocaleLowerCase();
 }
 
 function estimateHint(state: SufficiencyState, lastsForSecs?: number | null): string {

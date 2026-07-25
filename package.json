@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "pnpm tauri dev",
     "build": "pnpm tauri build",
+    "build:macos-widget": "bash scripts/build-macos-widget.sh",
+    "build:macos-app": "bash scripts/build-macos-app-with-widget.sh",
     "tauri": "tauri",
     "dev:renderer": "pnpm --dir frontend dev",
     "build:renderer": "pnpm --dir frontend build",
