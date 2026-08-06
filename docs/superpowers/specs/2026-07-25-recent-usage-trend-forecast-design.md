@@ -52,13 +52,13 @@ treated as empty history and logged without breaking quota refresh.
 For a weekly tier, select samples that match the tier's current reset timestamp.
 The estimator has two paths:
 
-- Rapid-change path: scan adjacent samples from newest to oldest and immediately
-  use the newest qualifying pair when it is four to fifteen minutes apart, no more
-  than thirty minutes old, increases by at least one percentage point, and
-  implies at least six percentage points per hour. This path takes precedence so
-  a sudden burst can override an older stable trend. Keeping the pair eligible
-  for thirty minutes prevents one subsequent flat refresh from immediately
-  erasing the alert.
+- Stable short-window path: inspect successful observations from the latest 30
+  minutes and require at least five samples spanning at least 20 minutes. The
+  newest sample must be no more than 10 minutes old, adjacent samples may be no
+  more than 10 minutes apart, and total utilization growth must be at least two
+  percentage points. The weighted fit must imply at least six percentage points
+  per hour and achieve an R-squared value of at least 0.8. This path takes
+  precedence only after the short-window signal is continuous and stable.
 - Normal path: use the latest 24 hours when they contain at least three distinct
   observations spanning at least 30 minutes. If that is insufficient, expand to
   48 hours.
@@ -113,14 +113,14 @@ Example summary:
 
 > 近 24 小时趋势：每小时增加 1.4%。按当前趋势预计 18 小时后耗尽，比重置早 9 小时。
 
-Rapid forecasts are explicitly labeled with their actual two-sample span:
+Stable short-window forecasts are labeled with their actual confirmed span:
 
-> 最近 5 分钟快速趋势：每小时增加 24%。按当前趋势预计 3 小时后耗尽。
+> 最近 20 分钟稳定趋势：每小时增加 12%。按当前趋势预计 4 小时后耗尽。
 
 When history is insufficient, the observed series is still shown and the summary
-says that normal prediction needs 30 minutes while a meaningful jump may start
-rapid prediction earlier. On refresh failure, the last successful samples remain
-visible together with the existing stale/error state.
+says that short-term prediction needs at least five samples stably covering 20
+minutes. On refresh failure, the last successful samples remain visible together
+with the existing stale/error state.
 
 ## Data Flow
 
@@ -139,9 +139,12 @@ visible together with the existing stale/error state.
   consumption; the slope is clamped to zero.
 - Duplicate timestamps and zero-variance time series cannot produce division by
   zero.
-- Rapid prediction ignores samples less than four minutes apart, changes below
-  one percentage point, and implied slopes below six percentage points per hour
-  so repeated manual refreshes and rounding noise do not trigger it.
+- Stable short-window prediction rejects fewer than five samples, less than 20
+  minutes of coverage, stale or discontinuous samples, less than two percentage
+  points of total growth, slopes below six percentage points per hour, and
+  weighted fits with R-squared below 0.8. This accounts for providers that expose
+  integer percentages and prevents the common 1% over five minutes = 12% per
+  hour false positive.
 - Provider failures never append samples.
 - History persistence errors are logged and do not discard current quota data.
 - Percentages above 100 remain valid projected values, while chart coordinates
@@ -153,9 +156,12 @@ Rust tests cover:
 
 - a recent spike outweighing old low activity;
 - insufficient recent data returning unknown;
-- a two-point 26% to 28% jump over five minutes starting rapid prediction;
-- rapid prediction surviving a subsequent flat refresh;
-- overly close two-point refreshes being rejected;
+- a two-point 26% to 28% jump over five minutes being rejected;
+- three samples over ten minutes being rejected;
+- five linear samples over twenty minutes starting a stable short-window
+  prediction;
+- an isolated final-sample burst failing the fit-quality gate;
+- overly close refreshes being rejected;
 - 24-hour selection and 48-hour fallback;
 - flat and decreasing samples producing a zero slope;
 - projected reset utilization and exhaustion time;

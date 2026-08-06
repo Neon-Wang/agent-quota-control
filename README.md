@@ -2,11 +2,11 @@
 
 Agent Quota Control is a macOS menu bar app for people who use Kimi Code and
 Codex heavily and want one quiet place to watch quota pressure, proxy state, and
-launcher shortcuts.
+menu-bar state.
 
 It keeps the menu bar compact, then moves the detailed controls into a Tauri
-dashboard: quota cards, reset times, projected weekly usage, selected tools,
-service monitoring, credentials, and per-service proxy settings.
+dashboard: quota cards, reset times, projected weekly usage, service monitoring,
+credentials, and per-service proxy settings.
 
 ![Agent Quota Control dashboard](docs/screenshots/dashboard.png)
 
@@ -21,13 +21,11 @@ service monitoring, credentials, and per-service proxy settings.
   run out, including the expected exhaustion time when applicable.
 - Freeze weekly projections after a quota first reaches 100%, so the estimate
   does not become misleading as reset time approaches.
-- Display separate Kimi and Codex menu bar items with service icons and compact
-  usage summaries.
+- Display separate Kimi and Codex menu bar items with independently selectable
+  service icons, usage percentages, and sufficiency text.
+- Open ChatGPT from the menu bar with a dedicated fixed 7897 proxy launch mode.
 - Add configurable native macOS widgets that select a monitored account and
   share the dashboard's redacted quota snapshot.
-- Manage detected IDE, app, and CLI launchers from the dashboard.
-- Launch CLI tools from a chosen project folder through Ghostty, with Terminal
-  fallback.
 - Store Kimi API keys in macOS Keychain or an encrypted vault.
 - Read Codex auth from the local Codex CLI login state.
 - Configure Kimi and Codex proxies independently with Auto, On, and Off modes.
@@ -80,21 +78,30 @@ dashboard hides the window and removes the Dock icon while keeping the Kimi and
 Codex menu bar items running. Click a menu bar item to show the dashboard again.
 
 Weekly forecasts use successful observations from the most recent 24 hours,
-weighted toward newer activity. A rapid path reacts immediately when two
-observations four to fifteen minutes apart show at least one percentage point of
-growth at six percentage points per hour or faster. Otherwise, the normal path
-requires at least three observations spanning 30 minutes and expands from 24 to
-48 hours when needed. If neither path qualifies, the dashboard shows the actual
-line and waits for more trend data instead of falling back to a misleading
-full-cycle average. Observations are stored in `usage-history.json` under the
-app configuration directory and are automatically bounded and pruned.
+weighted toward newer activity. A stable short-window path can respond after at
+least five observations cover 20 minutes, but only when the newest sample is
+fresh, adjacent samples are no more than 10 minutes apart, utilization rises by
+at least two percentage points, and the weighted linear fit is sufficiently
+stable. This prevents integer percentage steps and isolated bursts from being
+extrapolated into misleading hourly rates. Otherwise, the normal path requires
+at least three observations spanning 30 minutes and expands from 24 to 48 hours
+when needed. If neither path qualifies, the dashboard shows the actual line and
+waits for more trend data instead of falling back to a misleading full-cycle
+average. Observations are stored in `usage-history.json` under the app
+configuration directory and are automatically bounded and pruned.
 
-The dashboard has four sections:
+The dashboard has three sections:
 
 - Overview: one canonical quota card per monitored account.
-- Tools: selected launchers and available detected tools.
-- Monitoring: service and menu-bar toggles plus Kimi/Codex account management.
+- Monitoring: service selection, independent menu-bar icon/percentage/state-text
+  toggles, and Kimi/Codex account management.
 - Settings: proxy settings and config directory access.
+
+Each service menu includes a dedicated `通过 7897 代理打开 ChatGPT` action.
+It starts the installed ChatGPT app executable with HTTP/HTTPS proxy variables,
+SOCKS proxy variables, and Chromium proxy arguments fixed to `127.0.0.1:7897`.
+The action is disabled when ChatGPT is missing or already running, because an
+already-running process cannot be retrofitted with a different startup proxy.
 
 ## Proxy Settings
 
