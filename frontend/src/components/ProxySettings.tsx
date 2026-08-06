@@ -1,4 +1,4 @@
-import { Network, TestTube2 } from "lucide-react";
+import { Network, Plug } from "lucide-react";
 import { useState } from "react";
 import { api } from "../api";
 import { proxyDetailLabel } from "../proxyDisplay";
@@ -34,9 +34,12 @@ export function ProxySettings({ state, onChange }: ProxySettingsProps) {
   return (
     <section className="panel wide">
       <div className="panel-title">
-        <Network size={16} aria-hidden />
-        代理
+        <Network size={15} strokeWidth={1.75} aria-hidden />
+        网络代理
       </div>
+      <p className="muted panel-description">
+        为每项服务单独选择连接方式。自动模式会优先尝试填写的地址，再检查常用本地端口。
+      </p>
       <div className="settings-grid two">
         <ServiceProxyEditor
           label="Kimi Code"
@@ -53,8 +56,13 @@ export function ProxySettings({ state, onChange }: ProxySettingsProps) {
       </div>
       {message && <p className="notice">{message}</p>}
       <div className="panel-actions">
-        <button className="primary" type="button" onClick={save}>
-          保存代理设置
+        <button
+          className="primary"
+          type="button"
+          onClick={save}
+          aria-label="保存代理设置"
+        >
+          应用更改
         </button>
       </div>
     </section>
@@ -72,6 +80,8 @@ function ServiceProxyEditor({
   onChange: (value: ServiceProxyConfig) => void;
   onTest: () => void;
 }) {
+  const [pressedMode, setPressedMode] = useState<ProxyMode | null>(null);
+
   function setMode(mode: ProxyMode) {
     onChange({ ...value, mode });
   }
@@ -79,13 +89,27 @@ function ServiceProxyEditor({
   return (
     <div className="proxy-editor">
       <h3 className="subhead">{label}</h3>
-      <div className="segmented">
+      <div className="segmented" role="group" aria-label={`${label} 代理模式`}>
         {(["auto", "on", "off"] as ProxyMode[]).map((mode) => (
           <button
             key={mode}
             type="button"
-            className={value.mode === mode ? "active" : ""}
-            onClick={() => setMode(mode)}
+            className={
+              pressedMode === mode || (pressedMode === null && value.mode === mode)
+                ? "active"
+                : ""
+            }
+            aria-pressed={value.mode === mode}
+            onPointerDown={() => setPressedMode(mode)}
+            onPointerLeave={() => {
+              if (pressedMode === mode) setPressedMode(null);
+            }}
+            onPointerCancel={() => setPressedMode(null)}
+            onContextMenu={() => setPressedMode(null)}
+            onClick={() => {
+              setMode(mode);
+              setPressedMode(null);
+            }}
           >
             {modeLabel(mode)}
           </button>
@@ -102,8 +126,8 @@ function ServiceProxyEditor({
         />
       </label>
       <button className="secondary compact" type="button" onClick={onTest}>
-        <TestTube2 size={13} aria-hidden />
-        测试
+        <Plug size={13} strokeWidth={1.75} aria-hidden />
+        测试连接
       </button>
     </div>
   );

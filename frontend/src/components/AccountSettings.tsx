@@ -1,6 +1,8 @@
 import { Check, KeyRound, Pencil, Plus, Terminal, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { api } from "../api";
+import codexIcon from "../assets/codex.png";
+import kimiIcon from "../assets/kimi.png";
 import type {
   DashboardState,
   KimiCredentialBackend,
@@ -95,18 +97,18 @@ export function AccountSettings({ state, onChange }: AccountSettingsProps) {
       <div className="account-settings-header">
         <div>
           <div className="panel-title">
-            <KeyRound size={16} aria-hidden />
+            <KeyRound size={15} strokeWidth={1.75} aria-hidden />
             上游监控账号
           </div>
           <p className="muted">每个账号会生成独立的概览卡片，并可在桌面 Widget 中选择。</p>
         </div>
         <div className="button-row account-add-actions">
           <button className="secondary compact" type="button" onClick={() => beginAdd("kimi")}>
-            <Plus size={14} aria-hidden />
+            <Plus size={14} strokeWidth={1.75} aria-hidden />
             添加 Kimi 账号
           </button>
           <button className="secondary compact" type="button" onClick={() => beginAdd("codex")}>
-            <Terminal size={14} aria-hidden />
+            <Terminal size={14} strokeWidth={1.75} aria-hidden />
             导入 Codex 账号
           </button>
         </div>
@@ -159,7 +161,7 @@ export function AccountSettings({ state, onChange }: AccountSettingsProps) {
               disabled={busy || !displayName.trim() || (addMode === "kimi" && !apiKey.trim())}
               onClick={() => void saveNewAccount()}
             >
-              <Check size={14} aria-hidden />
+              <Check size={14} strokeWidth={1.75} aria-hidden />
               {addMode === "kimi" ? "保存 Kimi 账号" : "导入当前 Codex 登录"}
             </button>
             <button className="secondary compact" type="button" disabled={busy} onClick={cancelAdd}>
@@ -175,19 +177,36 @@ export function AccountSettings({ state, onChange }: AccountSettingsProps) {
         {state.config.accounts.map((account) => (
           <div className="account-row" key={account.id}>
             <div className="account-identity">
-              <span className={`service-mark ${account.service}`} aria-hidden>
-                {account.service === "kimi" ? "K" : "C"}
-              </span>
-              <div>
-                {editingId === account.id ? (
-                  <input
-                    aria-label="新账号名称"
-                    value={editedName}
-                    onChange={(event) => setEditedName(event.currentTarget.value)}
-                  />
-                ) : (
-                  <strong>{account.displayName}</strong>
-                )}
+              <img
+                className="service-mark"
+                src={account.service === "kimi" ? kimiIcon : codexIcon}
+                alt=""
+                aria-hidden
+              />
+              <div className="account-name-stack">
+                <div className="account-name-slot">
+                  {editingId === account.id ? (
+                    <input
+                      className="account-name-editor"
+                      aria-label="新账号名称"
+                      autoFocus
+                      value={editedName}
+                      onFocus={(event) => event.currentTarget.select()}
+                      onChange={(event) => setEditedName(event.currentTarget.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && editedName.trim()) {
+                          event.preventDefault();
+                          void saveRename(account.id);
+                        } else if (event.key === "Escape") {
+                          event.preventDefault();
+                          setEditingId(null);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <strong>{account.displayName}</strong>
+                  )}
+                </div>
                 <small>
                   {account.service === "kimi" ? "Kimi Code" : "Codex"}
                   {account.providerIdentityHint ? ` · ${account.providerIdentityHint}` : ""}
@@ -198,19 +217,19 @@ export function AccountSettings({ state, onChange }: AccountSettingsProps) {
               {editingId === account.id ? (
                 <>
                   <button className="icon-button" type="button" title="保存名称" aria-label={`保存 ${account.displayName} 的名称`} disabled={busy || !editedName.trim()} onClick={() => void saveRename(account.id)}>
-                    <Check size={14} aria-hidden />
+                    <Check size={14} strokeWidth={1.75} aria-hidden />
                   </button>
                   <button className="icon-button" type="button" title="取消重命名" aria-label="取消重命名" disabled={busy} onClick={() => setEditingId(null)}>
-                    <X size={14} aria-hidden />
+                    <X size={14} strokeWidth={1.75} aria-hidden />
                   </button>
                 </>
               ) : (
                 <>
                   <button className="icon-button" type="button" title="重命名" aria-label={`重命名 ${account.displayName}`} disabled={busy} onClick={() => beginRename(account)}>
-                    <Pencil size={14} aria-hidden />
+                    <Pencil size={14} strokeWidth={1.75} aria-hidden />
                   </button>
                   <button className="icon-button danger-button" type="button" title="删除账号" aria-label={`删除 ${account.displayName}`} disabled={busy} onClick={() => void remove(account)}>
-                    <Trash2 size={14} aria-hidden />
+                    <Trash2 size={14} strokeWidth={1.75} aria-hidden />
                   </button>
                 </>
               )}

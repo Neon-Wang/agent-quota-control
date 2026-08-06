@@ -12,4 +12,93 @@ describe("dashboard card layout", () => {
     expect(quotaCardRule).toBeDefined();
     expect(quotaCardRule).not.toMatch(/(?:^|\n)\s*height:\s*100%;/);
   });
+
+  it("keeps an unavailable quota tier aligned with a populated tier", () => {
+    const styles = readFileSync(resolve("src/styles.css"), "utf8");
+    const tierRowRule = styles.match(/\.tier-row\s*\{([^}]*)\}/)?.[1];
+    const unavailableRule = styles.match(/\.tier-unavailable\s*\{([^}]*)\}/)?.[1];
+
+    expect(tierRowRule).toMatch(/min-height:\s*57px;/);
+    expect(unavailableRule).toMatch(/min-height:\s*57px;/);
+  });
+
+  it("keeps the content grid item constrained so the inner view can scroll", () => {
+    const styles = readFileSync(resolve("src/styles.css"), "utf8");
+    const contentRule = styles.match(/\.content\s*\{([^}]*)\}/)?.[1];
+    const scrollerRule = styles.match(/\.content-scroll\s*\{([^}]*)\}/)?.[1];
+    const bodyRule = styles.match(/\.content-scroll-body\s*\{([^}]*)\}/)?.[1];
+    const trackRule = styles.match(
+      /\.content-scroll::-webkit-scrollbar-track\s*\{([^}]*)\}/,
+    )?.[1];
+    const thumbHoverRule = styles.match(
+      /\.content-scroll::-webkit-scrollbar-thumb:hover,\s*\n\.content-scroll::-webkit-scrollbar-thumb:active\s*\{([^}]*)\}/,
+    )?.[1];
+
+    expect(contentRule).toMatch(/min-height:\s*0;/);
+    expect(contentRule).toMatch(/height:\s*calc\(100% \+ var\(--window-inset\)\);/);
+    expect(contentRule).toMatch(/margin-bottom:\s*calc\(-1 \* var\(--window-inset\)\);/);
+    expect(scrollerRule).toMatch(/min-height:\s*0;/);
+    expect(scrollerRule).toMatch(/overflow:\s*auto;/);
+    expect(scrollerRule).toMatch(/margin-right:\s*calc\(-1 \* var\(--window-inset\)\);/);
+    expect(scrollerRule).toMatch(/mask-image:/);
+    expect(scrollerRule).toMatch(/mask-size:\s*calc\(100% - 10px\) 100%, 10px 100%;/);
+    expect(bodyRule).not.toMatch(/mask-image:/);
+    expect(trackRule).toMatch(/margin-top:\s*52px;/);
+    expect(thumbHoverRule).not.toMatch(/transform:\s*scale/);
+    expect(thumbHoverRule).toMatch(/width:\s*8px;/);
+    expect(styles).toMatch(/--scrollbar-thumb:\s*#9b9b9b;/);
+  });
+
+  it("uses native non-selectable text while keeping form controls editable", () => {
+    const styles = readFileSync(resolve("src/styles.css"), "utf8");
+    const bodyRule = styles.match(/body\s*\{([^}]*)\}/)?.[1];
+    const buttonRule = styles.match(/button\s*\{([^}]*)\}/)?.[1];
+
+    expect(bodyRule).toMatch(/user-select:\s*none;/);
+    expect(buttonRule).toMatch(/cursor:\s*default;/);
+    expect(buttonRule).toMatch(/user-select:\s*none;/);
+    expect(styles).toMatch(/input,\s*\ntextarea,\s*\nselect\s*\{[^}]*user-select:\s*text;/);
+  });
+
+  it("keeps the glass toolbar top-aligned while centering the title to it", () => {
+    const styles = readFileSync(resolve("src/styles.css"), "utf8");
+    const topbarRule = styles.match(/\.topbar\s*\{([^}]*)\}/)?.[1];
+    const titleRule = styles.match(/\.topbar-title\s*\{([^}]*)\}/)?.[1];
+    const controlsRule = styles.match(/\.topbar-actions\s*\{([^}]*)\}/)?.[1];
+
+    expect(topbarRule).toMatch(/top:\s*0;/);
+    expect(topbarRule).toMatch(/align-items:\s*flex-start;/);
+    expect(topbarRule).toMatch(/min-height:\s*52px;/);
+    expect(topbarRule).toMatch(/padding:\s*0 10px 0 8px;/);
+    expect(controlsRule).toMatch(/min-height:\s*42px;/);
+    expect(controlsRule).toMatch(/margin-left:\s*-10px;/);
+    expect(titleRule).toMatch(/min-height:\s*42px;/);
+    expect(titleRule).toMatch(/align-items:\s*center;/);
+  });
+
+  it("styles settings controls for press feedback, contrast, and inactive primary", () => {
+    const styles = readFileSync(resolve("src/styles.css"), "utf8");
+    const primaryActive = styles.match(
+      /\.primary:active:not\(:disabled\)\s*\{([^}]*)\}/,
+    )?.[1];
+    const inactivePrimary = styles.match(
+      /\.window-inactive \.primary\s*\{([^}]*)\}/,
+    )?.[1];
+    const proxyEditor = styles.match(/\.proxy-editor\s*\{([^}]*)\}/)?.[1];
+    const proxySubhead = styles.match(
+      /\.proxy-editor \.subhead\s*\{([^}]*)\}/,
+    )?.[1];
+
+    expect(primaryActive).toMatch(/background:/);
+    expect(inactivePrimary).toMatch(/background:\s*var\(--control-solid\);/);
+    expect(proxyEditor).toMatch(/gap:\s*10px;/);
+    expect(proxySubhead).toMatch(/margin-bottom:\s*0;/);
+    expect(styles).toMatch(
+      /:root\[data-theme="dark"\] \.segmented button\.active\s*\{[^}]*background:\s*#4a4949;/,
+    );
+    expect(styles).toMatch(/:root\[data-theme="dark"\]\s*\{/);
+    expect(styles).toMatch(/--bg:\s*#ffffff;/);
+    expect(styles).toMatch(/--panel-radius:\s*10px;/);
+    expect(styles).toMatch(/--shadow-card:\s*0 0 0 0\.5px rgba\(0, 0, 0, 0\.06\);/);
+  });
 });

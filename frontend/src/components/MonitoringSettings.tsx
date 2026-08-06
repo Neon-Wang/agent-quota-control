@@ -1,6 +1,7 @@
 import { Activity, PanelTop } from "lucide-react";
 import { api } from "../api";
 import type { DashboardState, StatusBarDisplayConfig } from "../types";
+import { ToggleSwitch } from "./ToggleSwitch";
 
 interface MonitoringSettingsProps {
   state: DashboardState;
@@ -58,7 +59,7 @@ export function MonitoringSettings({ state, onChange }: MonitoringSettingsProps)
     <>
       <section className="panel">
         <div className="panel-title">
-          <Activity size={16} aria-hidden />
+          <Activity size={15} strokeWidth={1.75} aria-hidden />
           监控服务
         </div>
         {services.map((service) => {
@@ -72,14 +73,13 @@ export function MonitoringSettings({ state, onChange }: MonitoringSettingsProps)
               <div className="service-switches">
                 <label>
                   <span>监控</span>
-                  <input
+                  <ToggleSwitch
                     aria-label={`监控 ${service.name}`}
-                    type="checkbox"
                     checked={monitored}
-                    onChange={(event) =>
+                    onChange={(enabled) =>
                       void updateServiceList(
                         service.id,
-                        event.currentTarget.checked,
+                        enabled,
                         state.config.selectedServices,
                         api.setSelectedServices,
                       )
@@ -88,15 +88,14 @@ export function MonitoringSettings({ state, onChange }: MonitoringSettingsProps)
                 </label>
                 <label>
                   <span>状态栏</span>
-                  <input
+                  <ToggleSwitch
                     aria-label={`在状态栏显示 ${service.name}`}
-                    type="checkbox"
                     disabled={!monitored}
                     checked={state.config.statusBarServices.includes(service.id)}
-                    onChange={(event) =>
+                    onChange={(enabled) =>
                       void updateServiceList(
                         service.id,
-                        event.currentTarget.checked,
+                        enabled,
                         state.config.statusBarServices,
                         api.setStatusBarServices,
                       )
@@ -111,24 +110,21 @@ export function MonitoringSettings({ state, onChange }: MonitoringSettingsProps)
 
       <section className="panel">
         <div className="panel-title">
-          <PanelTop size={16} aria-hidden />
+          <PanelTop size={15} strokeWidth={1.75} aria-hidden />
           状态栏样式
         </div>
         <p className="muted">三个元素可以独立开关并自由组合。</p>
         {displayOptions.map(({ key, label }) => (
-          <label className="switch-row" key={key}>
+          <div className="switch-row" key={key}>
             <span>
               <strong>{label}</strong>
             </span>
-            <input
+            <ToggleSwitch
               aria-label={`状态栏显示${label}`}
-              type="checkbox"
               checked={state.config.statusBarDisplay[key]}
-              onChange={(event) =>
-                void updateDisplay(key, event.currentTarget.checked)
-              }
+              onChange={(enabled) => void updateDisplay(key, enabled)}
             />
-          </label>
+          </div>
         ))}
       </section>
     </>

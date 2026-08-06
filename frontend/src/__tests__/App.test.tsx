@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
@@ -6,6 +6,35 @@ import type { DashboardState } from "../types";
 
 const invokeMock = vi.fn();
 const fixedNow = new Date("2026-06-04T08:15:00+08:00").getTime();
+
+const windowFocusMock = vi.hoisted(() => {
+  const listeners: Array<(event: { payload: boolean }) => void> = [];
+  let focused = true;
+  return {
+    listeners,
+    emit(nextFocused: boolean) {
+      focused = nextFocused;
+      for (const listener of [...listeners]) {
+        listener({ payload: nextFocused });
+      }
+    },
+    reset() {
+      focused = true;
+      listeners.length = 0;
+    },
+    api: {
+      startDragging: vi.fn(),
+      isFocused: vi.fn(() => Promise.resolve(focused)),
+      onFocusChanged: vi.fn((handler: (event: { payload: boolean }) => void) => {
+        listeners.push(handler);
+        return Promise.resolve(() => {
+          const index = listeners.indexOf(handler);
+          if (index >= 0) listeners.splice(index, 1);
+        });
+      }),
+    },
+  };
+});
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (command: string, args?: unknown) => invokeMock(command, args),
@@ -16,7 +45,10 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => ({ startDragging: vi.fn() }),
+  getCurrentWindow: () => ({
+    ...windowFocusMock.api,
+    setTheme: vi.fn(() => Promise.resolve()),
+  }),
 }));
 
 const dashboardState: DashboardState = {
@@ -189,6 +221,20 @@ const dashboardState: DashboardState = {
 describe("App", () => {
   beforeEach(() => {
     vi.spyOn(Date, "now").mockReturnValue(fixedNow);
+    windowFocusMock.reset();
+    localStorage.clear();
+    vi.spyOn(window, "matchMedia").mockImplementation((query) => {
+      return {
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      } as MediaQueryList;
+    });
     invokeMock.mockReset();
     invokeMock.mockImplementation((command: string) => {
       if (command === "get_dashboard_state") return Promise.resolve(dashboardState);
@@ -207,11 +253,11 @@ describe("App", () => {
     const kimiCard = await screen.findByRole("region", { name: "Kimi 工作账号 配额" });
     const codexCard = screen.getByRole("region", { name: "Codex 个人账号 配额" });
 
-    expect(within(kimiCard).getByRole("heading", { name: "够" })).toBeInTheDocument();
-    expect(within(codexCard).getByRole("heading", { name: "不够" })).toBeInTheDocument();
+    expect(within(kimiCard).getByText("够用")).toBeInTheDocument();
+    expect(within(codexCard).getByText("不够")).toBeInTheDocument();
+    expect(within(kimiCard).getByRole("heading", { name: "Kimi 工作账号" })).toBeInTheDocument();
     expect(within(kimiCard).getByText("Kimi Code")).toBeInTheDocument();
-    expect(within(kimiCard).getByText("Kimi 工作账号")).toBeInTheDocument();
-    expect(within(codexCard).getByText("Codex 个人账号")).toBeInTheDocument();
+    expect(within(codexCard).getByRole("heading", { name: "Codex 个人账号" })).toBeInTheDocument();
     expect(within(codexCard).getByText("当前无 5 小时限制")).toBeInTheDocument();
 
     const kimiTierSlots = kimiCard.querySelectorAll(".tier-row, .tier-unavailable");
@@ -225,8 +271,11 @@ describe("App", () => {
 
     expect(screen.getByText("（2 小时 15 分钟后重置）")).toBeInTheDocument();
     expect(screen.getByText(/06月07日 .* 重置/)).toBeInTheDocument();
-    expect(screen.getByText("Kimi 当前直连")).toBeInTheDocument();
-    expect(screen.getByText("Codex 代理已连接")).toBeInTheDocument();
+    const proxyStatus = screen.getByLabelText("代理状态");
+    expect(within(proxyStatus).getByText("Kimi")).toBeInTheDocument();
+    expect(within(proxyStatus).getByText("Codex")).toBeInTheDocument();
+    expect(within(proxyStatus).getByLabelText("Kimi：登录正常")).toBeInTheDocument();
+    expect(within(proxyStatus).getByLabelText("Codex：登录正常")).toBeInTheDocument();
     expect(screen.getByText("本周内预计够用。")).toBeInTheDocument();
     expect(screen.getByText("预计将在 1 天 2 小时 后耗尽。")).toBeInTheDocument();
     expect(
@@ -237,11 +286,106 @@ describe("App", () => {
     expect(screen.queryByText("unavailable")).not.toBeInTheDocument();
   });
 
+  it("shows login failures in service status without duplicate warning icons", async () => {
+    const loginExpiredState: DashboardState = {
+      ...dashboardState,
+      cards: dashboardState.cards.map((card) => ({
+        ...card,
+        status: "login_expired",
+        errorMessage: "登录已失效",
+      })),
+    };
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "get_dashboard_state") return Promise.resolve(loginExpiredState);
+      return Promise.resolve(loginExpiredState);
+    });
+
+    render(<App />);
+
+    expect(await screen.findByLabelText("Kimi：需要登录")).toBeInTheDocument();
+    expect(screen.getByLabelText("Codex：需要登录")).toBeInTheDocument();
+    const kimiCard = screen.getByRole("region", { name: "Kimi 工作账号 配额" });
+    expect(kimiCard.querySelectorAll(".lucide-triangle-alert")).toHaveLength(1);
+    expect(within(kimiCard).getByText("登录已失效，请重新登录后刷新。")).toBeInTheDocument();
+  });
+
   it("does not expose the retired generic tools page", async () => {
     render(<App />);
 
     await screen.findByRole("button", { name: "概览" });
     expect(screen.queryByRole("button", { name: "工具" })).not.toBeInTheDocument();
+  });
+
+  it("highlights navigation on press and changes pages on release", async () => {
+    render(<App />);
+
+    const overview = await screen.findByRole("button", { name: "概览" });
+    const settings = screen.getByRole("button", { name: "设置" });
+    const kimiCard = screen.getByRole("region", { name: "Kimi 工作账号 配额" });
+
+    fireEvent.pointerDown(settings, { button: 0 });
+    expect(settings).toHaveClass("active");
+    expect(overview).not.toHaveClass("active");
+    expect(kimiCard).toBeInTheDocument();
+
+    fireEvent.click(settings);
+    expect(settings).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "保存代理设置" })).toBeInTheDocument();
+  });
+
+  it("activates the safe-area blur after content scrolls", async () => {
+    const { container } = render(<App />);
+
+    await screen.findByRole("button", { name: "概览" });
+    const scroller = container.querySelector(".content-scroll") as HTMLDivElement;
+    const edgeBlur = container.querySelector(".scroll-edge-effect");
+    const controls = container.querySelector(".topbar-actions") as HTMLElement;
+
+    expect(scroller).not.toHaveClass("scrolled");
+    expect(scroller.contains(edgeBlur)).toBe(true);
+    expect(within(controls).getByText("Kimi")).toBeInTheDocument();
+    expect(within(controls).getByText("Codex")).toBeInTheDocument();
+    expect(within(controls).getByRole("button", { name: "刷新" })).toBeInTheDocument();
+
+    scroller.scrollTop = 24;
+    fireEvent.scroll(scroller);
+    expect(scroller).toHaveClass("scrolled");
+  });
+
+  it("remounts the safe-area blur layers when window focus changes", async () => {
+    const { container } = render(<App />);
+    await screen.findByRole("button", { name: "概览" });
+    await waitFor(() => {
+      expect(windowFocusMock.listeners.length).toBeGreaterThan(0);
+    });
+    // Let the initial isFocused() resolution settle before toggling focus.
+    await waitFor(() => {
+      expect(windowFocusMock.api.isFocused).toHaveBeenCalled();
+    });
+    await Promise.resolve();
+
+    const before = container.querySelector(".edge-blur-soft");
+    expect(before).toBeTruthy();
+
+    act(() => {
+      windowFocusMock.emit(false);
+    });
+    await waitFor(() => {
+      expect(container.querySelector(".app-shell")).toHaveClass("window-inactive");
+    });
+    const afterBlur = container.querySelector(".edge-blur-soft");
+    expect(afterBlur).toBeTruthy();
+    expect(afterBlur).not.toBe(before);
+
+    act(() => {
+      windowFocusMock.emit(true);
+    });
+    await waitFor(() => {
+      expect(container.querySelector(".app-shell")).toHaveClass("window-active");
+    });
+    const afterFocus = container.querySelector(".edge-blur-soft");
+    expect(afterFocus).toBeTruthy();
+    expect(afterFocus).not.toBe(afterBlur);
   });
 
   it("saves proxy settings from settings tab", async () => {
@@ -259,12 +403,59 @@ describe("App", () => {
     );
   });
 
+  it("previews proxy mode on press and commits on release", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "设置" }));
+    const kimiModes = screen.getByRole("group", { name: "Kimi Code 代理模式" });
+    const off = within(kimiModes).getByRole("button", { name: "关闭" });
+    const auto = within(kimiModes).getByRole("button", { name: "自动" });
+
+    expect(auto).toHaveAttribute("aria-pressed", "true");
+    expect(off).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.pointerDown(off);
+    expect(off).toHaveClass("active");
+    expect(auto).not.toHaveClass("active");
+    expect(off).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(off);
+    expect(off).toHaveAttribute("aria-pressed", "true");
+    expect(auto).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("lets appearance switch between light, dark, and system", async () => {
+    const user = userEvent.setup();
+    localStorage.clear();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "设置" }));
+    const appearance = screen.getByRole("group", { name: "外观模式" });
+    const light = within(appearance).getByRole("button", { name: "浅色" });
+    const dark = within(appearance).getByRole("button", { name: "深色" });
+    const system = within(appearance).getByRole("button", { name: "跟随系统" });
+
+    expect(system).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.pointerDown(light);
+    expect(light).toHaveClass("active");
+    expect(system).not.toHaveClass("active");
+    fireEvent.click(light);
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(light).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(dark);
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(dark).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("lets a monitored service be hidden from the menu bar independently", async () => {
     const user = userEvent.setup();
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "监控" }));
-    await user.click(screen.getByRole("checkbox", { name: "在状态栏显示 Codex" }));
+    await user.click(screen.getByRole("switch", { name: "在状态栏显示 Codex" }));
 
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("set_status_bar_services", {
@@ -279,7 +470,7 @@ describe("App", () => {
 
     await user.click(await screen.findByRole("button", { name: "监控" }));
 
-    await user.click(screen.getByRole("checkbox", { name: "状态栏显示服务图标" }));
+    await user.click(screen.getByRole("switch", { name: "状态栏显示服务图标" }));
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("set_status_bar_display", {
         display: {
@@ -290,7 +481,7 @@ describe("App", () => {
       }),
     );
 
-    await user.click(screen.getByRole("checkbox", { name: "状态栏显示百分比" }));
+    await user.click(screen.getByRole("switch", { name: "状态栏显示百分比" }));
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("set_status_bar_display", {
         display: {
@@ -301,7 +492,7 @@ describe("App", () => {
       }),
     );
 
-    await user.click(screen.getByRole("checkbox", { name: "状态栏显示状态文字" }));
+    await user.click(screen.getByRole("switch", { name: "状态栏显示状态文字" }));
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("set_status_bar_display", {
         display: {
@@ -330,5 +521,26 @@ describe("App", () => {
         backend: "keychain",
       }),
     );
+  });
+
+  it("runs account icon actions on release instead of press", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "监控" }));
+    const rename = screen.getByRole("button", {
+      name: "重命名 Kimi 工作账号",
+    });
+
+    fireEvent.pointerDown(rename);
+    expect(screen.queryByRole("textbox", { name: "新账号名称" })).not.toBeInTheDocument();
+
+    fireEvent.click(rename);
+    const editor = screen.getByRole("textbox", { name: "新账号名称" });
+    expect(editor).toBeInTheDocument();
+    expect(within(rename.closest(".account-row") as HTMLElement).getByText("Kimi Code")).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("textbox", { name: "新账号名称" })).not.toBeInTheDocument();
   });
 });
