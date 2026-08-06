@@ -36,6 +36,8 @@
   --trend-observed: #1f8a5b;
   --trend-projected: #c47a10;
   --trend-grid: rgba(60, 60, 67, 0.12);
+  --scrollbar-thumb: rgba(0, 0, 0, 0.35);
+  --scrollbar-thumb-active: rgba(0, 0, 0, 0.45);
   --radius: 12px;
   --radius-sm: 8px;
   --radius-control: 7px;
@@ -96,6 +98,8 @@
     --trend-observed: #30d158;
     --trend-projected: #ffd60a;
     --trend-grid: rgba(84, 84, 88, 0.55);
+    --scrollbar-thumb: #9b9b9b;
+    --scrollbar-thumb-active: #b0b0b0;
   }
 }
 
@@ -291,19 +295,18 @@ select {
 }
 
 .scroll-edge-effect {
-  position: absolute;
-  z-index: -1;
+  position: sticky;
+  top: 0;
+  z-index: 1;
   pointer-events: none;
-  top: calc(-1 * var(--window-inset));
-  right: calc(-1 * var(--window-inset));
-  left: -10px;
   height: 66px;
+  margin-bottom: -66px;
   overflow: hidden;
   opacity: 0;
   transition: opacity 140ms ease;
 }
 
-.topbar.scrolled .scroll-edge-effect {
+.content-scroll.scrolled .scroll-edge-effect {
   opacity: 1;
 }
 
@@ -406,8 +409,10 @@ select {
 }
 
 .window-inactive .topbar-actions {
-  border-color: rgba(73, 73, 73, 0.34);
-  background: rgba(40, 40, 40, 0.3);
+  border-color: transparent;
+  background: var(--sidebar-solid);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .proxy-pills {
@@ -485,30 +490,91 @@ select {
 }
 
 .content-scroll {
+  position: relative;
   flex: 1;
   height: 100%;
   min-height: 0;
   overflow: auto;
-  padding: 52px 10px 24px 8px;
+  margin-right: calc(-1 * var(--window-inset));
   scroll-padding-top: 52px;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    rgba(0, 0, 0, 0.08) 10px,
-    rgba(0, 0, 0, 0.42) 26px,
-    rgba(0, 0, 0, 0.82) 40px,
-    black 52px,
-    black 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    rgba(0, 0, 0, 0.08) 10px,
-    rgba(0, 0, 0, 0.42) 26px,
-    rgba(0, 0, 0, 0.82) 40px,
-    black 52px,
-    black 100%
-  );
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  /* Viewport-fixed fade: stays at the top while content scrolls under it.
+     Second mask layer keeps the scrollbar strip fully opaque. */
+  -webkit-mask-image:
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      rgba(0, 0, 0, 0.08) 10px,
+      rgba(0, 0, 0, 0.42) 26px,
+      rgba(0, 0, 0, 0.82) 40px,
+      black 52px,
+      black 100%
+    ),
+    linear-gradient(#000, #000);
+  -webkit-mask-size: calc(100% - 10px) 100%, 10px 100%;
+  -webkit-mask-position: 0 0, 100% 0;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-composite: source-over;
+  mask-image:
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      rgba(0, 0, 0, 0.08) 10px,
+      rgba(0, 0, 0, 0.42) 26px,
+      rgba(0, 0, 0, 0.82) 40px,
+      black 52px,
+      black 100%
+    ),
+    linear-gradient(#000, #000);
+  mask-size: calc(100% - 10px) 100%, 10px 100%;
+  mask-position: 0 0, 100% 0;
+  mask-repeat: no-repeat;
+  mask-composite: add;
+}
+
+.content-scroll-body {
+  min-height: 100%;
+  padding: 52px calc(10px + var(--window-inset)) 24px 8px;
+}
+
+/* Match macOS Settings scroll thumb: ~6px pill, sampled #9B9B9B in dark mode. */
+.content-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.content-scroll::-webkit-scrollbar:horizontal {
+  height: 8px;
+}
+
+.content-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  margin-top: 52px;
+  margin-bottom: 10px;
+}
+
+.content-scroll::-webkit-scrollbar-thumb {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+  background-color: var(--scrollbar-thumb);
+  box-shadow: none;
+  transform: none;
+}
+
+.content-scroll::-webkit-scrollbar-thumb:hover,
+.content-scroll::-webkit-scrollbar-thumb:active {
+  width: 8px;
+  border: 1px solid transparent;
+  background-clip: content-box;
+  background-color: var(--scrollbar-thumb-active);
+  box-shadow: none;
+  transform: none;
+}
+
+.content-scroll::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 @supports not (

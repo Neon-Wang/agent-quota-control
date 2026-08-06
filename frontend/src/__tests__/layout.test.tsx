@@ -17,12 +17,26 @@ describe("dashboard card layout", () => {
     const styles = readFileSync(resolve("src/styles.css"), "utf8");
     const contentRule = styles.match(/\.content\s*\{([^}]*)\}/)?.[1];
     const scrollerRule = styles.match(/\.content-scroll\s*\{([^}]*)\}/)?.[1];
+    const bodyRule = styles.match(/\.content-scroll-body\s*\{([^}]*)\}/)?.[1];
+    const trackRule = styles.match(
+      /\.content-scroll::-webkit-scrollbar-track\s*\{([^}]*)\}/,
+    )?.[1];
+    const thumbHoverRule = styles.match(
+      /\.content-scroll::-webkit-scrollbar-thumb:hover,\s*\n\.content-scroll::-webkit-scrollbar-thumb:active\s*\{([^}]*)\}/,
+    )?.[1];
 
     expect(contentRule).toMatch(/min-height:\s*0;/);
     expect(contentRule).toMatch(/height:\s*100%;/);
     expect(scrollerRule).toMatch(/min-height:\s*0;/);
     expect(scrollerRule).toMatch(/overflow:\s*auto;/);
-    expect(scrollerRule).toMatch(/mask-image:\s*linear-gradient/);
+    expect(scrollerRule).toMatch(/margin-right:\s*calc\(-1 \* var\(--window-inset\)\);/);
+    expect(scrollerRule).toMatch(/mask-image:/);
+    expect(scrollerRule).toMatch(/mask-size:\s*calc\(100% - 10px\) 100%, 10px 100%;/);
+    expect(bodyRule).not.toMatch(/mask-image:/);
+    expect(trackRule).toMatch(/margin-top:\s*52px;/);
+    expect(thumbHoverRule).not.toMatch(/transform:\s*scale/);
+    expect(thumbHoverRule).toMatch(/width:\s*8px;/);
+    expect(styles).toMatch(/--scrollbar-thumb:\s*#9b9b9b;/);
   });
 
   it("uses native non-selectable text while keeping form controls editable", () => {

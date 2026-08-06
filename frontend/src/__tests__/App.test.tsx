@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
@@ -6,6 +6,35 @@ import type { DashboardState } from "../types";
 
 const invokeMock = vi.fn();
 const fixedNow = new Date("2026-06-04T08:15:00+08:00").getTime();
+
+const windowFocusMock = vi.hoisted(() => {
+  const listeners: Array<(event: { payload: boolean }) => void> = [];
+  let focused = true;
+  return {
+    listeners,
+    emit(nextFocused: boolean) {
+      focused = nextFocused;
+      for (const listener of [...listeners]) {
+        listener({ payload: nextFocused });
+      }
+    },
+    reset() {
+      focused = true;
+      listeners.length = 0;
+    },
+    api: {
+      startDragging: vi.fn(),
+      isFocused: vi.fn(() => Promise.resolve(focused)),
+      onFocusChanged: vi.fn((handler: (event: { payload: boolean }) => void) => {
+        listeners.push(handler);
+        return Promise.resolve(() => {
+          const index = listeners.indexOf(handler);
+          if (index >= 0) listeners.splice(index, 1);
+        });
+      }),
+    },
+  };
+});
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (command: string, args?: unknown) => invokeMock(command, args),
@@ -16,7 +45,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => ({ startDragging: vi.fn() }),
+  getCurrentWindow: () => windowFocusMock.api,
 }));
 
 const dashboardState: DashboardState = {
@@ -189,6 +218,7 @@ const dashboardState: DashboardState = {
 describe("App", () => {
   beforeEach(() => {
     vi.spyOn(Date, "now").mockReturnValue(fixedNow);
+    windowFocusMock.reset();
     invokeMock.mockReset();
     invokeMock.mockImplementation((command: string) => {
       if (command === "get_dashboard_state") return Promise.resolve(dashboardState);
@@ -291,18 +321,55 @@ describe("App", () => {
     const { container } = render(<App />);
 
     await screen.findByRole("button", { name: "概览" });
-    const topbar = container.querySelector(".topbar");
     const scroller = container.querySelector(".content-scroll") as HTMLDivElement;
+    const edgeBlur = container.querySelector(".scroll-edge-effect");
     const controls = container.querySelector(".topbar-actions") as HTMLElement;
 
-    expect(topbar).not.toHaveClass("scrolled");
+    expect(scroller).not.toHaveClass("scrolled");
+    expect(scroller.contains(edgeBlur)).toBe(true);
     expect(within(controls).getByText("Kimi")).toBeInTheDocument();
     expect(within(controls).getByText("Codex")).toBeInTheDocument();
     expect(within(controls).getByRole("button", { name: "刷新" })).toBeInTheDocument();
 
     scroller.scrollTop = 24;
     fireEvent.scroll(scroller);
-    expect(topbar).toHaveClass("scrolled");
+    expect(scroller).toHaveClass("scrolled");
+  });
+
+  it("remounts the safe-area blur layers when window focus changes", async () => {
+    const { container } = render(<App />);
+    await screen.findByRole("button", { name: "概览" });
+    await waitFor(() => {
+      expect(windowFocusMock.listeners.length).toBeGreaterThan(0);
+    });
+    // Let the initial isFocused() resolution settle before toggling focus.
+    await waitFor(() => {
+      expect(windowFocusMock.api.isFocused).toHaveBeenCalled();
+    });
+    await Promise.resolve();
+
+    const before = container.querySelector(".edge-blur-soft");
+    expect(before).toBeTruthy();
+
+    act(() => {
+      windowFocusMock.emit(false);
+    });
+    await waitFor(() => {
+      expect(container.querySelector(".app-shell")).toHaveClass("window-inactive");
+    });
+    const afterBlur = container.querySelector(".edge-blur-soft");
+    expect(afterBlur).toBeTruthy();
+    expect(afterBlur).not.toBe(before);
+
+    act(() => {
+      windowFocusMock.emit(true);
+    });
+    await waitFor(() => {
+      expect(container.querySelector(".app-shell")).toHaveClass("window-active");
+    });
+    const afterFocus = container.querySelector(".edge-blur-soft");
+    expect(afterFocus).toBeTruthy();
+    expect(afterFocus).not.toBe(afterBlur);
   });
 
   it("saves proxy settings from settings tab", async () => {

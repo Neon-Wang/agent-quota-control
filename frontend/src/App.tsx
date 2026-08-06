@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PointerEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -37,6 +37,7 @@ export function App() {
   const [windowFocused, setWindowFocused] = useState(true);
   const [contentScrolled, setContentScrolled] = useState(false);
   const contentScrollRef = useRef<HTMLDivElement>(null);
+  const scrollEdgeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void loadState();
@@ -54,16 +55,55 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const handleFocus = () => setWindowFocused(true);
-    const handleBlur = () => setWindowFocused(false);
+    const appWindow = getCurrentWindow();
+    let disposed = false;
+    const unsubs: Array<() => void> = [];
+
+    const setFocused = (focused: boolean) => {
+      if (!disposed) setWindowFocused(focused);
+    };
+
+    void appWindow
+      .isFocused()
+      .then(setFocused)
+      .catch(() => setFocused(document.hasFocus()));
+
+    void appWindow
+      .onFocusChanged(({ payload: focused }) => setFocused(focused))
+      .then((dispose) => {
+        if (disposed) {
+          dispose();
+          return;
+        }
+        unsubs.push(dispose);
+      })
+      .catch(() => undefined);
+
+    const handleFocus = () => setFocused(true);
+    const handleBlur = () => setFocused(false);
     window.addEventListener("focus", handleFocus);
     window.addEventListener("blur", handleBlur);
-    setWindowFocused(document.hasFocus());
-    return () => {
+    unsubs.push(() => {
       window.removeEventListener("focus", handleFocus);
       window.removeEventListener("blur", handleBlur);
+    });
+
+    return () => {
+      disposed = true;
+      for (const unsub of unsubs) unsub();
     };
   }, []);
+
+  useLayoutEffect(() => {
+    // Same-frame nudge so WebKit resamples backdrop-filter with the new
+    // window-active / window-inactive paint, instead of lagging one frame.
+    const edge = scrollEdgeRef.current;
+    if (!edge) return;
+    const previousTransform = edge.style.transform;
+    edge.style.transform = "translateZ(0)";
+    void edge.offsetHeight;
+    edge.style.transform = previousTransform;
+  }, [windowFocused]);
 
   async function loadState() {
     setLoading(true);
@@ -153,15 +193,10 @@ export function App() {
 
       <section className="content">
         <header
-          className={contentScrolled ? "topbar scrolled" : "topbar"}
+          className="topbar"
           data-tauri-drag-region
           onPointerDown={beginWindowDrag}
         >
-          <div className="scroll-edge-effect" aria-hidden>
-            <span className="edge-blur edge-blur-soft" />
-            <span className="edge-blur edge-blur-medium" />
-            <span className="edge-blur edge-blur-near" />
-          </div>
           <div className="topbar-actions" data-tauri-no-drag>
             {state && (
               <div className="proxy-pills" aria-label={t.proxyStatus}>
@@ -204,55 +239,71 @@ export function App() {
 
         <div
           ref={contentScrollRef}
-          className="content-scroll"
+          className={contentScrolled ? "content-scroll scrolled" : "content-scroll"}
           onScroll={(event) =>
             setContentScrolled(event.currentTarget.scrollTop > 2)
           }
         >
-          {error && <div className="error-box">{error}</div>}
+          <div ref={scrollEdgeRef} className="scroll-edge-effect" aria-hidden>
+            <span
+              key={`soft-${windowFocused ? "on" : "off"}`}
+              className="edge-blur edge-blur-soft"
+            />
+            <span
+              key={`medium-${windowFocused ? "on" : "off"}`}
+              className="edge-blur edge-blur-medium"
+            />
+            <span
+              key={`near-${windowFocused ? "on" : "off"}`}
+              className="edge-blur edge-blur-near"
+            />
+          </div>
+          <div className="content-scroll-body">
+            {error && <div className="error-box">{error}</div>}
 
-          {state && view === "dashboard" && (
-            <div className="dashboard-grid">
-              {state.cards.map((card) => (
-                <QuotaCard
-                  key={card.accountId}
-                  card={card}
-                  iconSrc={card.service === "kimi" ? kimiIcon : codexIcon}
-                />
-              ))}
-              {state.cards.length === 0 && (
-                <div className="dashboard-empty">
-                  <h3>还没有监控账号</h3>
-                  <p>在“监控”中添加 Kimi 或 Codex 账号。</p>
-                </div>
-              )}
-            </div>
-          )}
+            {state && view === "dashboard" && (
+              <div className="dashboard-grid">
+                {state.cards.map((card) => (
+                  <QuotaCard
+                    key={card.accountId}
+                    card={card}
+                    iconSrc={card.service === "kimi" ? kimiIcon : codexIcon}
+                  />
+                ))}
+                {state.cards.length === 0 && (
+                  <div className="dashboard-empty">
+                    <h3>还没有监控账号</h3>
+                    <p>在“监控”中添加 Kimi 或 Codex 账号。</p>
+                  </div>
+                )}
+              </div>
+            )}
 
-          {state && view === "monitoring" && (
-            <div className="settings-grid">
-              <MonitoringSettings state={state} onChange={setState} />
-              <AccountSettings state={state} onChange={setState} />
-            </div>
-          )}
+            {state && view === "monitoring" && (
+              <div className="settings-grid">
+                <MonitoringSettings state={state} onChange={setState} />
+                <AccountSettings state={state} onChange={setState} />
+              </div>
+            )}
 
-          {state && view === "settings" && (
-            <div className="settings-grid">
-              <ProxySettings state={state} onChange={setState} />
-              <section className="panel">
-                <div className="panel-title">
-                  <Folder size={15} strokeWidth={1.75} aria-hidden />
-                  配置目录
-                </div>
-                <p className="muted">
-                  配置与用量历史保存在这里，可打开检查或备份。
-                </p>
-                <button className="secondary" type="button" onClick={api.revealConfigDir}>
-                  打开配置目录
-                </button>
-              </section>
-            </div>
-          )}
+            {state && view === "settings" && (
+              <div className="settings-grid">
+                <ProxySettings state={state} onChange={setState} />
+                <section className="panel">
+                  <div className="panel-title">
+                    <Folder size={15} strokeWidth={1.75} aria-hidden />
+                    配置目录
+                  </div>
+                  <p className="muted">
+                    配置与用量历史保存在这里，可打开检查或备份。
+                  </p>
+                  <button className="secondary" type="button" onClick={api.revealConfigDir}>
+                    打开配置目录
+                  </button>
+                </section>
+              </div>
+            )}
+          </div>
         </div>
       </section>
     </main>
