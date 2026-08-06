@@ -26,7 +26,8 @@ describe("dashboard card layout", () => {
     )?.[1];
 
     expect(contentRule).toMatch(/min-height:\s*0;/);
-    expect(contentRule).toMatch(/height:\s*100%;/);
+    expect(contentRule).toMatch(/height:\s*calc\(100% \+ var\(--window-inset\)\);/);
+    expect(contentRule).toMatch(/margin-bottom:\s*calc\(-1 \* var\(--window-inset\)\);/);
     expect(scrollerRule).toMatch(/min-height:\s*0;/);
     expect(scrollerRule).toMatch(/overflow:\s*auto;/);
     expect(scrollerRule).toMatch(/margin-right:\s*calc\(-1 \* var\(--window-inset\)\);/);
@@ -64,5 +65,31 @@ describe("dashboard card layout", () => {
     expect(controlsRule).toMatch(/margin-left:\s*-10px;/);
     expect(titleRule).toMatch(/min-height:\s*42px;/);
     expect(titleRule).toMatch(/align-items:\s*center;/);
+  });
+
+  it("styles settings controls for press feedback, contrast, and inactive primary", () => {
+    const styles = readFileSync(resolve("src/styles.css"), "utf8");
+    const primaryActive = styles.match(
+      /\.primary:active:not\(:disabled\)\s*\{([^}]*)\}/,
+    )?.[1];
+    const inactivePrimary = styles.match(
+      /\.window-inactive \.primary\s*\{([^}]*)\}/,
+    )?.[1];
+    const proxyEditor = styles.match(/\.proxy-editor\s*\{([^}]*)\}/)?.[1];
+    const proxySubhead = styles.match(
+      /\.proxy-editor \.subhead\s*\{([^}]*)\}/,
+    )?.[1];
+
+    expect(primaryActive).toMatch(/background:/);
+    expect(inactivePrimary).toMatch(/background:\s*var\(--control-solid\);/);
+    expect(proxyEditor).toMatch(/gap:\s*10px;/);
+    expect(proxySubhead).toMatch(/margin-bottom:\s*0;/);
+    expect(styles).toMatch(
+      /:root\[data-theme="dark"\] \.segmented button\.active\s*\{[^}]*background:\s*#4a4949;/,
+    );
+    expect(styles).toMatch(/:root\[data-theme="dark"\]\s*\{/);
+    expect(styles).toMatch(/--bg:\s*#ffffff;/);
+    expect(styles).toMatch(/--panel-radius:\s*10px;/);
+    expect(styles).toMatch(/--shadow-card:\s*0 0 0 0\.5px rgba\(0, 0, 0, 0\.06\);/);
   });
 });

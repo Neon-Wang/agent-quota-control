@@ -80,6 +80,8 @@ function ServiceProxyEditor({
   onChange: (value: ServiceProxyConfig) => void;
   onTest: () => void;
 }) {
+  const [pressedMode, setPressedMode] = useState<ProxyMode | null>(null);
+
   function setMode(mode: ProxyMode) {
     onChange({ ...value, mode });
   }
@@ -87,13 +89,27 @@ function ServiceProxyEditor({
   return (
     <div className="proxy-editor">
       <h3 className="subhead">{label}</h3>
-      <div className="segmented">
+      <div className="segmented" role="group" aria-label={`${label} 代理模式`}>
         {(["auto", "on", "off"] as ProxyMode[]).map((mode) => (
           <button
             key={mode}
             type="button"
-            className={value.mode === mode ? "active" : ""}
-            onClick={() => setMode(mode)}
+            className={
+              pressedMode === mode || (pressedMode === null && value.mode === mode)
+                ? "active"
+                : ""
+            }
+            aria-pressed={value.mode === mode}
+            onPointerDown={() => setPressedMode(mode)}
+            onPointerLeave={() => {
+              if (pressedMode === mode) setPressedMode(null);
+            }}
+            onPointerCancel={() => setPressedMode(null)}
+            onContextMenu={() => setPressedMode(null)}
+            onClick={() => {
+              setMode(mode);
+              setPressedMode(null);
+            }}
           >
             {modeLabel(mode)}
           </button>

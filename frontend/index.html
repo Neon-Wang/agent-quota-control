@@ -4,6 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent 配额控制台</title>
+    <script>
+      (function () {
+        try {
+          var pref = localStorage.getItem("agent-quota-control.theme") || "system";
+          var dark =
+            pref === "dark" ||
+            (pref !== "light" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          var theme = dark ? "dark" : "light";
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.style.colorScheme = theme;
+        } catch (error) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

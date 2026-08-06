@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { api } from "./api";
 import { AccountSettings } from "./components/AccountSettings";
+import { AppearanceSettings } from "./components/AppearanceSettings";
 import { MonitoringSettings } from "./components/MonitoringSettings";
 import { ProxySettings } from "./components/ProxySettings";
 import { QuotaCard } from "./components/QuotaCard";
@@ -288,6 +289,7 @@ export function App() {
 
             {state && view === "settings" && (
               <div className="settings-grid">
+                <AppearanceSettings />
                 <ProxySettings state={state} onChange={setState} />
                 <section className="panel">
                   <div className="panel-title">

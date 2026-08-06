@@ -45,7 +45,10 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => windowFocusMock.api,
+  getCurrentWindow: () => ({
+    ...windowFocusMock.api,
+    setTheme: vi.fn(() => Promise.resolve()),
+  }),
 }));
 
 const dashboardState: DashboardState = {
@@ -219,6 +222,19 @@ describe("App", () => {
   beforeEach(() => {
     vi.spyOn(Date, "now").mockReturnValue(fixedNow);
     windowFocusMock.reset();
+    localStorage.clear();
+    vi.spyOn(window, "matchMedia").mockImplementation((query) => {
+      return {
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      } as MediaQueryList;
+    });
     invokeMock.mockReset();
     invokeMock.mockImplementation((command: string) => {
       if (command === "get_dashboard_state") return Promise.resolve(dashboardState);
@@ -385,6 +401,53 @@ describe("App", () => {
         expect.objectContaining({ settings: dashboardState.config.proxy }),
       ),
     );
+  });
+
+  it("previews proxy mode on press and commits on release", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "设置" }));
+    const kimiModes = screen.getByRole("group", { name: "Kimi Code 代理模式" });
+    const off = within(kimiModes).getByRole("button", { name: "关闭" });
+    const auto = within(kimiModes).getByRole("button", { name: "自动" });
+
+    expect(auto).toHaveAttribute("aria-pressed", "true");
+    expect(off).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.pointerDown(off);
+    expect(off).toHaveClass("active");
+    expect(auto).not.toHaveClass("active");
+    expect(off).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(off);
+    expect(off).toHaveAttribute("aria-pressed", "true");
+    expect(auto).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("lets appearance switch between light, dark, and system", async () => {
+    const user = userEvent.setup();
+    localStorage.clear();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "设置" }));
+    const appearance = screen.getByRole("group", { name: "外观模式" });
+    const light = within(appearance).getByRole("button", { name: "浅色" });
+    const dark = within(appearance).getByRole("button", { name: "深色" });
+    const system = within(appearance).getByRole("button", { name: "跟随系统" });
+
+    expect(system).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.pointerDown(light);
+    expect(light).toHaveClass("active");
+    expect(system).not.toHaveClass("active");
+    fireEvent.click(light);
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(light).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(dark);
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(dark).toHaveAttribute("aria-pressed", "true");
   });
 
   it("lets a monitored service be hidden from the menu bar independently", async () => {
