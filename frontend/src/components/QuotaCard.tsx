@@ -18,9 +18,13 @@ const tierLabels: Record<string, string> = {
 };
 
 export function QuotaCard({ card, iconSrc }: QuotaCardProps) {
-  const displayState = stateLabel(card.weeklyEstimate?.state ?? "unknown");
+  const estimateState = card.weeklyEstimate?.state ?? "unknown";
+  const displayState = stateLabel(estimateState);
   const hasData = card.tiers.length > 0;
   const isHealthy = card.status === "fresh" || card.status === "stale";
+  const needsLogin = card.status === "login_expired";
+  const statusTone = needsLogin ? "problem" : estimateState;
+  const statusText = needsLogin ? "需要登录" : displayState;
   const weeklyTier = card.tiers.find((tier) =>
     ["weekly_limit", "seven_day"].includes(tier.name),
   );
@@ -48,24 +52,30 @@ export function QuotaCard({ card, iconSrc }: QuotaCardProps) {
           <img src={iconSrc} alt="" aria-hidden />
           <div>
             <p className="eyebrow">{card.serviceDisplayName}</p>
-            <h3
-              className={`quota-state-heading quota-state-${card.weeklyEstimate?.state ?? "unknown"}`}
-            >
-              {displayState}
+            <h3>
+              {showAccountName ? card.accountDisplayName : card.serviceDisplayName}
             </h3>
-            {showAccountName ? (
-              <p className="account-card-name">{card.accountDisplayName}</p>
-            ) : null}
           </div>
         </div>
-        {isHealthy ? (
-          <CheckCircle2 size={18} aria-hidden className="ok" />
-        ) : (
-          <AlertTriangle size={18} aria-hidden className="warn" />
-        )}
+        <div className={`status-badge ${statusTone}`}>
+          {isHealthy ? (
+            <CheckCircle2 size={13} strokeWidth={1.75} aria-hidden />
+          ) : (
+            <AlertTriangle size={13} strokeWidth={1.75} aria-hidden />
+          )}
+          {statusText}
+        </div>
       </div>
 
-      {card.errorMessage && <p className="error-copy card-status-copy">{card.errorMessage}</p>}
+      {card.errorMessage && (
+        <div className="card-alert" role="status">
+          <span>
+            {needsLogin
+              ? "登录已失效，请重新登录后刷新。"
+              : card.errorMessage}
+          </span>
+        </div>
+      )}
       {!hasData && !card.errorMessage && <p className="muted quota-empty">等待后台首次刷新用量。</p>}
       {hasData && (
         <div className="tier-stack">
@@ -122,16 +132,18 @@ export function QuotaCard({ card, iconSrc }: QuotaCardProps) {
         <UsageTrendChart estimate={card.weeklyEstimate} />
       )}
 
-      <div className="proxy-line">
-        <Network size={13} aria-hidden />
-        <span>{proxyDetailLabel(card.proxy)}</span>
-      </div>
-      {card.queriedAt && (
+      <div className="card-meta">
         <div className="proxy-line">
-          <Clock size={13} aria-hidden />
-          <span>更新于 {new Date(card.queriedAt).toLocaleTimeString()}</span>
+          <Network size={12} strokeWidth={1.75} aria-hidden />
+          <span>{proxyDetailLabel(card.proxy)}</span>
         </div>
-      )}
+        {card.queriedAt && (
+          <div className="proxy-line">
+            <Clock size={12} strokeWidth={1.75} aria-hidden />
+            <span>更新于 {new Date(card.queriedAt).toLocaleTimeString()}</span>
+          </div>
+        )}
+      </div>
     </section>
   );
 }
@@ -143,7 +155,7 @@ function meterClass(utilization: number): string {
 }
 
 function stateLabel(state: SufficiencyState): string {
-  if (state === "enough") return "够";
+  if (state === "enough") return "够用";
   if (state === "tight") return "偏紧";
   if (state === "not_enough") return "不够";
   return "等待数据";
