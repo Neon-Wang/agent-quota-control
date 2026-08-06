@@ -12,11 +12,14 @@ const EXHAUSTED_PROJECTED_PCT: f64 = 100.0;
 const MIN_TREND_SAMPLES: usize = 3;
 const MIN_TREND_SPAN_SECS: i64 = 30 * 60;
 const TREND_HALF_LIFE_HOURS: f64 = 4.0;
-const RAPID_MIN_SPAN_SECS: i64 = 4 * 60;
-const RAPID_MAX_SPAN_SECS: i64 = 15 * 60;
-const RAPID_MAX_AGE_SECS: i64 = 30 * 60;
-const RAPID_MIN_DELTA_PCT: f64 = 1.0;
-const RAPID_MIN_SLOPE_PCT_PER_HOUR: f64 = 6.0;
+const STABLE_SHORT_WINDOW_SECS: i64 = 30 * 60;
+const STABLE_SHORT_MIN_SAMPLES: usize = 5;
+const STABLE_SHORT_MIN_SPAN_SECS: i64 = 20 * 60;
+const STABLE_SHORT_MAX_SAMPLE_GAP_SECS: i64 = 10 * 60;
+const STABLE_SHORT_MAX_AGE_SECS: i64 = 10 * 60;
+const STABLE_SHORT_MIN_DELTA_PCT: f64 = 2.0;
+const STABLE_SHORT_MIN_SLOPE_PCT_PER_HOUR: f64 = 6.0;
+const STABLE_SHORT_MIN_R_SQUARED: f64 = 0.8;
 
 pub fn now_unix_secs() -> i64 {
     SystemTime::now()
@@ -185,7 +188,7 @@ pub fn estimate_recent_weekly_trend(
         return estimate;
     }
 
-    let selected = select_rapid_change_points(&observed_points, now_secs)
+    let selected = select_stable_short_trend_points(&observed_points, now_secs)
         .map(|points| (24, points))
         .or_else(|| select_recent_points(&observed_points, now_secs, 24).map(|points| (24, points)))
         .or_else(|| {
@@ -257,27 +260,46 @@ pub fn estimate_recent_weekly_trend(
     }
 }
 
-fn select_rapid_change_points(
+fn select_stable_short_trend_points(
     points: &[UsageChartPoint],
     now_secs: i64,
 ) -> Option<Vec<UsageChartPoint>> {
-    points.windows(2).rev().find_map(|pair| {
-        let previous = &pair[0];
-        let current = &pair[1];
-        let span_secs = current
+    let cutoff = now_secs - STABLE_SHORT_WINDOW_SECS;
+    let selected = points
+        .iter()
+        .filter(|point| point.observed_at_secs >= cutoff)
+        .cloned()
+        .collect::<Vec<_>>();
+    if selected.len() < STABLE_SHORT_MIN_SAMPLES {
+        return None;
+    }
+
+    let span_secs = observation_span(&selected)?;
+    if span_secs < STABLE_SHORT_MIN_SPAN_SECS {
+        return None;
+    }
+
+    let newest = selected.last()?;
+    let age_secs = now_secs.saturating_sub(newest.observed_at_secs);
+    if !(0..=STABLE_SHORT_MAX_AGE_SECS).contains(&age_secs) {
+        return None;
+    }
+
+    if selected.windows(2).any(|pair| {
+        pair[1]
             .observed_at_secs
-            .saturating_sub(previous.observed_at_secs);
-        let age_secs = now_secs.saturating_sub(current.observed_at_secs);
-        let delta = current.utilization - previous.utilization;
-        if !(RAPID_MIN_SPAN_SECS..=RAPID_MAX_SPAN_SECS).contains(&span_secs)
-            || !(0..=RAPID_MAX_AGE_SECS).contains(&age_secs)
-            || delta < RAPID_MIN_DELTA_PCT
-        {
-            return None;
-        }
-        let slope = delta * 3_600.0 / span_secs as f64;
-        (slope >= RAPID_MIN_SLOPE_PCT_PER_HOUR).then(|| vec![previous.clone(), current.clone()])
-    })
+            .saturating_sub(pair[0].observed_at_secs)
+            > STABLE_SHORT_MAX_SAMPLE_GAP_SECS
+    }) {
+        return None;
+    }
+
+    let total_delta = newest.utilization - selected.first()?.utilization;
+    let fit = weighted_trend_fit(&selected)?;
+    (total_delta >= STABLE_SHORT_MIN_DELTA_PCT
+        && fit.slope_pct_per_hour >= STABLE_SHORT_MIN_SLOPE_PCT_PER_HOUR
+        && fit.r_squared >= STABLE_SHORT_MIN_R_SQUARED)
+        .then_some(selected)
 }
 
 fn select_recent_points(
@@ -300,6 +322,15 @@ fn select_recent_points(
 }
 
 fn weighted_slope_pct_per_hour(points: &[UsageChartPoint]) -> Option<f64> {
+    weighted_trend_fit(points).map(|fit| fit.slope_pct_per_hour)
+}
+
+struct WeightedTrendFit {
+    slope_pct_per_hour: f64,
+    r_squared: f64,
+}
+
+fn weighted_trend_fit(points: &[UsageChartPoint]) -> Option<WeightedTrendFit> {
     let newest_at = points.last()?.observed_at_secs;
     let weighted = points
         .iter()
@@ -336,7 +367,27 @@ fn weighted_slope_pct_per_hour(points: &[UsageChartPoint]) -> Option<f64> {
         return None;
     }
     let slope = numerator / denominator;
-    slope.is_finite().then_some(slope)
+    let intercept = mean_y - slope * mean_x;
+    let residual_sum = weighted
+        .iter()
+        .map(|(x, y, weight)| {
+            let predicted = intercept + slope * x;
+            weight * (y - predicted).powi(2)
+        })
+        .sum::<f64>();
+    let total_sum = weighted
+        .iter()
+        .map(|(_, y, weight)| weight * (y - mean_y).powi(2))
+        .sum::<f64>();
+    let r_squared = if total_sum <= f64::EPSILON {
+        1.0
+    } else {
+        (1.0 - residual_sum / total_sum).clamp(0.0, 1.0)
+    };
+    (slope.is_finite() && r_squared.is_finite()).then_some(WeightedTrendFit {
+        slope_pct_per_hour: slope,
+        r_squared,
+    })
 }
 
 fn observation_span(points: &[UsageChartPoint]) -> Option<i64> {
@@ -604,7 +655,7 @@ mod tests {
     }
 
     #[test]
-    fn rapid_forecast_uses_a_two_percent_jump_over_five_minutes() {
+    fn stable_short_forecast_rejects_a_two_percent_jump_over_five_minutes() {
         let now = 1_700_000_000;
         let weekly = tier("seven_day", 28.0, Some(172_800), now);
         let samples = vec![
@@ -614,14 +665,12 @@ mod tests {
 
         let estimate = estimate_recent_weekly_trend(&weekly, now, &samples, None);
 
-        assert_eq!(estimate.slope_pct_per_hour, Some(24.0));
-        assert_eq!(estimate.observed_span_secs, Some(300));
-        assert_ne!(estimate.state, SufficiencyState::Unknown);
-        assert!(estimate.lasts_for_secs.is_some());
+        assert_eq!(estimate.slope_pct_per_hour, None);
+        assert_eq!(estimate.state, SufficiencyState::Unknown);
     }
 
     #[test]
-    fn rapid_forecast_keeps_a_recent_jump_active_after_a_flat_follow_up() {
+    fn stable_short_forecast_rejects_a_flat_follow_up_with_too_few_samples() {
         let now = 1_700_000_000;
         let weekly = tier("seven_day", 28.0, Some(172_800), now);
         let samples = vec![
@@ -632,13 +681,81 @@ mod tests {
 
         let estimate = estimate_recent_weekly_trend(&weekly, now, &samples, None);
 
-        assert_eq!(estimate.slope_pct_per_hour, Some(24.0));
-        assert_eq!(estimate.observed_span_secs, Some(300));
+        assert_eq!(estimate.slope_pct_per_hour, None);
+        assert_eq!(estimate.state, SufficiencyState::Unknown);
+    }
+
+    #[test]
+    fn stable_short_forecast_rejects_a_single_one_percent_quantized_step() {
+        let now = 1_700_000_000;
+        let weekly = tier("seven_day", 50.0, Some(172_800), now);
+        let samples = vec![
+            sample("codex", &weekly, now - 600, 49.0),
+            sample("codex", &weekly, now - 300, 49.0),
+            sample("codex", &weekly, now, 50.0),
+        ];
+
+        let estimate = estimate_recent_weekly_trend(&weekly, now, &samples, None);
+
+        assert_eq!(estimate.slope_pct_per_hour, None);
+        assert_eq!(estimate.state, SufficiencyState::Unknown);
+    }
+
+    #[test]
+    fn stable_short_forecast_rejects_only_three_samples_over_ten_minutes() {
+        let now = 1_700_000_000;
+        let weekly = tier("seven_day", 50.0, Some(172_800), now);
+        let samples = vec![
+            sample("codex", &weekly, now - 600, 48.0),
+            sample("codex", &weekly, now - 300, 49.0),
+            sample("codex", &weekly, now, 50.0),
+        ];
+
+        let estimate = estimate_recent_weekly_trend(&weekly, now, &samples, None);
+
+        assert_eq!(estimate.slope_pct_per_hour, None);
+        assert_eq!(estimate.state, SufficiencyState::Unknown);
+    }
+
+    #[test]
+    fn stable_short_forecast_uses_five_linear_samples_over_twenty_minutes() {
+        let now = 1_700_000_000;
+        let weekly = tier("seven_day", 50.0, Some(172_800), now);
+        let samples = vec![
+            sample("codex", &weekly, now - 1_200, 46.0),
+            sample("codex", &weekly, now - 900, 47.0),
+            sample("codex", &weekly, now - 600, 48.0),
+            sample("codex", &weekly, now - 300, 49.0),
+            sample("codex", &weekly, now, 50.0),
+        ];
+
+        let estimate = estimate_recent_weekly_trend(&weekly, now, &samples, None);
+
+        assert_eq!(estimate.slope_pct_per_hour, Some(12.0));
+        assert_eq!(estimate.observed_span_secs, Some(1_200));
         assert_ne!(estimate.state, SufficiencyState::Unknown);
     }
 
     #[test]
-    fn rapid_forecast_rejects_refreshes_that_are_too_close_together() {
+    fn stable_short_forecast_rejects_a_last_sample_only_burst() {
+        let now = 1_700_000_000;
+        let weekly = tier("seven_day", 50.0, Some(172_800), now);
+        let samples = vec![
+            sample("codex", &weekly, now - 1_200, 46.0),
+            sample("codex", &weekly, now - 900, 46.0),
+            sample("codex", &weekly, now - 600, 46.0),
+            sample("codex", &weekly, now - 300, 46.0),
+            sample("codex", &weekly, now, 50.0),
+        ];
+
+        let estimate = estimate_recent_weekly_trend(&weekly, now, &samples, None);
+
+        assert_eq!(estimate.slope_pct_per_hour, None);
+        assert_eq!(estimate.state, SufficiencyState::Unknown);
+    }
+
+    #[test]
+    fn stable_short_forecast_rejects_refreshes_that_are_too_close_together() {
         let now = 1_700_000_000;
         let weekly = tier("seven_day", 28.0, Some(172_800), now);
         let samples = vec![
@@ -653,7 +770,7 @@ mod tests {
     }
 
     #[test]
-    fn rapid_forecast_rejects_a_two_minute_rounding_jump() {
+    fn stable_short_forecast_rejects_a_two_minute_rounding_jump() {
         let now = 1_700_000_000;
         let weekly = tier("seven_day", 28.0, Some(172_800), now);
         let samples = vec![

@@ -6,13 +6,14 @@ interface UsageTrendChartProps {
 }
 
 const VIEWBOX_WIDTH = 360;
-const VIEWBOX_HEIGHT = 158;
+const VIEWBOX_HEIGHT = 166;
 const PLOT_LEFT = 38;
 const PLOT_RIGHT = 12;
-const PLOT_TOP = 10;
+const PLOT_TOP = 24;
 const PLOT_BOTTOM = 28;
 const PLOT_WIDTH = VIEWBOX_WIDTH - PLOT_LEFT - PLOT_RIGHT;
 const PLOT_HEIGHT = VIEWBOX_HEIGHT - PLOT_TOP - PLOT_BOTTOM;
+const NOW_LABEL_SIDE_INSET = 18;
 
 export function UsageTrendChart({
   estimate,
@@ -37,7 +38,7 @@ export function UsageTrendChart({
         <span className="trend-pending-mark" aria-hidden="true" />
         <div>
           <strong>趋势图正在建立</strong>
-          <p>常规预测需累计 30 分钟；出现明显用量跃升时可提前启动快速预测。</p>
+          <p>短期预测至少需要 5 个样本并稳定覆盖 20 分钟；否则继续积累数据。</p>
         </div>
       </div>
     );
@@ -46,6 +47,10 @@ export function UsageTrendChart({
   const observedCoordinates = toPolyline(observedPoints, windowStart, windowEnd);
   const projectedCoordinates = toPolyline(projectedPoints, windowStart, windowEnd);
   const nowX = xCoordinate(nowSecs, windowStart, windowEnd);
+  const nowLabelX = Math.min(
+    Math.max(nowX, PLOT_LEFT + NOW_LABEL_SIDE_INSET),
+    VIEWBOX_WIDTH - PLOT_RIGHT - NOW_LABEL_SIDE_INSET,
+  );
   const latestObserved = observedPoints[observedPoints.length - 1];
   const projectedEnd = projectedPoints[projectedPoints.length - 1];
   const accessibleLabel = chartAccessibleLabel(latestObserved, projectedEnd);
@@ -91,7 +96,7 @@ export function UsageTrendChart({
             y1={PLOT_TOP}
             y2={PLOT_TOP + PLOT_HEIGHT}
           />
-          <text className="trend-now-label" x={nowX} y={PLOT_TOP + 10}>
+          <text className="trend-now-label" x={nowLabelX} y={PLOT_TOP - 8}>
             现在
           </text>
 
@@ -180,10 +185,12 @@ function trendSummary(estimate: QuotaEstimate): string {
   }
 
   const observedSpanSecs = estimate.observedSpanSecs;
-  const isRapidTrend =
-    observedSpanSecs != null && observedSpanSecs < 30 * 60;
-  const windowLabel = isRapidTrend
-    ? `最近 ${formatShortSpan(observedSpanSecs)}快速趋势`
+  const isStableShortTrend =
+    observedSpanSecs != null &&
+    observedSpanSecs >= 20 * 60 &&
+    observedSpanSecs < 30 * 60;
+  const windowLabel = isStableShortTrend
+    ? `最近 ${formatShortSpan(observedSpanSecs)}稳定趋势`
     : `近 ${estimate.trendWindowHours} 小时趋势`;
   const pace =
     estimate.slopePctPerHour === 0

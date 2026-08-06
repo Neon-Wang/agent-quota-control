@@ -205,7 +205,6 @@ button {
 
 .quota-card {
   min-height: 520px;
-  height: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -628,6 +627,10 @@ button {
 .trend-now-label {
   text-anchor: middle;
 }
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3px;
+  stroke-linejoin: round;
 
 .trend-summary {
   margin: 4px 0 0;
