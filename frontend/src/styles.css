@@ -882,6 +882,7 @@ select {
 .tier-row {
   display: grid;
   gap: 7px;
+  min-height: 57px;
   padding: 13px 0;
   border-top: 1px solid var(--separator);
 }
@@ -891,7 +892,7 @@ select {
 }
 
 .tier-unavailable {
-  min-height: 44px;
+  min-height: 57px;
   display: flex;
   align-items: center;
   justify-content: space-between;

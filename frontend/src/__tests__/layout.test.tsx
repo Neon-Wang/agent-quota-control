@@ -13,6 +13,15 @@ describe("dashboard card layout", () => {
     expect(quotaCardRule).not.toMatch(/(?:^|\n)\s*height:\s*100%;/);
   });
 
+  it("keeps an unavailable quota tier aligned with a populated tier", () => {
+    const styles = readFileSync(resolve("src/styles.css"), "utf8");
+    const tierRowRule = styles.match(/\.tier-row\s*\{([^}]*)\}/)?.[1];
+    const unavailableRule = styles.match(/\.tier-unavailable\s*\{([^}]*)\}/)?.[1];
+
+    expect(tierRowRule).toMatch(/min-height:\s*57px;/);
+    expect(unavailableRule).toMatch(/min-height:\s*57px;/);
+  });
+
   it("keeps the content grid item constrained so the inner view can scroll", () => {
     const styles = readFileSync(resolve("src/styles.css"), "utf8");
     const contentRule = styles.match(/\.content\s*\{([^}]*)\}/)?.[1];
