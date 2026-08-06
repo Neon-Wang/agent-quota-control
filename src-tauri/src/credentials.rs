@@ -270,7 +270,7 @@ mod account_tests {
                     "access_token": "secret-access-token",
                     "account_id": "acct-work"
                 },
-                "last_refresh": "2026-07-21T08:00:00Z"
+                "last_refresh": "2099-07-21T08:00:00Z"
             }"#,
         )
         .expect("chatgpt auth should import");
