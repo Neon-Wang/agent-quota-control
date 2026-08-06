@@ -6,8 +6,6 @@ const zhCN = {
   dashboard: "概览",
   monitoring: "监控",
   settings: "设置",
-  updated: "更新于",
-  notRefreshed: "尚未刷新",
   refresh: "刷新",
   loading: "正在加载控制台",
   proxyStatus: "代理状态",

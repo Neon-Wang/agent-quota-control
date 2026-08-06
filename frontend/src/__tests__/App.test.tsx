@@ -287,6 +287,24 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "保存代理设置" })).toBeInTheDocument();
   });
 
+  it("activates the safe-area blur after content scrolls", async () => {
+    const { container } = render(<App />);
+
+    await screen.findByRole("button", { name: "概览" });
+    const topbar = container.querySelector(".topbar");
+    const scroller = container.querySelector(".content-scroll") as HTMLDivElement;
+    const controls = container.querySelector(".topbar-actions") as HTMLElement;
+
+    expect(topbar).not.toHaveClass("scrolled");
+    expect(within(controls).getByText("Kimi")).toBeInTheDocument();
+    expect(within(controls).getByText("Codex")).toBeInTheDocument();
+    expect(within(controls).getByRole("button", { name: "刷新" })).toBeInTheDocument();
+
+    scroller.scrollTop = 24;
+    fireEvent.scroll(scroller);
+    expect(topbar).toHaveClass("scrolled");
+  });
+
   it("saves proxy settings from settings tab", async () => {
     const user = userEvent.setup();
     render(<App />);

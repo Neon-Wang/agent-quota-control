@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PointerEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -35,14 +35,8 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [windowFocused, setWindowFocused] = useState(true);
-
-  const lastUpdated = useMemo(() => {
-    const timestamps = (state?.cards ?? [])
-      .map((card) => card.queriedAt)
-      .filter((value): value is number => typeof value === "number");
-    if (timestamps.length === 0) return t.notRefreshed;
-    return new Date(Math.max(...timestamps)).toLocaleTimeString();
-  }, [state]);
+  const [contentScrolled, setContentScrolled] = useState(false);
+  const contentScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void loadState();
@@ -141,6 +135,10 @@ export function App() {
                 onClick={() => {
                   setView(item.id);
                   setPressedView(null);
+                  setContentScrolled(false);
+                  if (contentScrollRef.current) {
+                    contentScrollRef.current.scrollTop = 0;
+                  }
                 }}
                 type="button"
                 data-tauri-no-drag
@@ -154,10 +152,15 @@ export function App() {
       </aside>
 
       <section className="content">
-        <header className="topbar" data-tauri-drag-region onPointerDown={beginWindowDrag}>
-          <div>
-            <h2>{navItems.find((item) => item.id === view)?.label}</h2>
-            <p className="eyebrow">{t.updated} {lastUpdated}</p>
+        <header
+          className={contentScrolled ? "topbar scrolled" : "topbar"}
+          data-tauri-drag-region
+          onPointerDown={beginWindowDrag}
+        >
+          <div className="scroll-edge-effect" aria-hidden>
+            <span className="edge-blur edge-blur-soft" />
+            <span className="edge-blur edge-blur-medium" />
+            <span className="edge-blur edge-blur-near" />
           </div>
           <div className="topbar-actions" data-tauri-no-drag>
             {state && (
@@ -194,9 +197,18 @@ export function App() {
               {t.refresh}
             </button>
           </div>
+          <div className="topbar-title">
+            <h2>{navItems.find((item) => item.id === view)?.label}</h2>
+          </div>
         </header>
 
-        <div className="content-scroll">
+        <div
+          ref={contentScrollRef}
+          className="content-scroll"
+          onScroll={(event) =>
+            setContentScrolled(event.currentTarget.scrollTop > 2)
+          }
+        >
           {error && <div className="error-box">{error}</div>}
 
           {state && view === "dashboard" && (
