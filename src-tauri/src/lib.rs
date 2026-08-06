@@ -1,13 +1,12 @@
 #![allow(dead_code)]
 
 mod accounts;
+mod chatgpt_launcher;
 mod commands;
 mod config;
 mod credentials;
 mod estimator;
-mod harness;
 mod keychain;
-mod launcher;
 mod providers;
 mod proxy;
 mod scheduler;
@@ -24,7 +23,6 @@ use tauri::{ActivationPolicy, Manager};
 
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_log::Builder::default().build())
         .manage(Arc::new(Mutex::new(AppRuntimeState::default())) as SharedRuntimeState)
@@ -40,9 +38,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_dashboard_state,
             commands::refresh_usage,
-            commands::set_selected_tools,
             commands::set_selected_services,
             commands::set_status_bar_services,
+            commands::set_status_bar_display,
             commands::save_proxy_settings,
             commands::test_proxy,
             commands::save_kimi_api_key,
@@ -51,7 +49,6 @@ pub fn run() {
             commands::import_codex_account,
             commands::rename_account,
             commands::remove_account,
-            commands::launch_tool,
             commands::reveal_config_dir
         ])
         .setup(|app| {

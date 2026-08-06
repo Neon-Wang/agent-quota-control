@@ -19,13 +19,9 @@ vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ startDragging: vi.fn() }),
 }));
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  open: vi.fn(),
-}));
-
 const dashboardState: DashboardState = {
   config: {
-    version: 4,
+    version: 5,
     accounts: [
       {
         id: "legacy-kimi",
@@ -48,7 +44,11 @@ const dashboardState: DashboardState = {
     ],
     selectedServices: ["kimi", "codex"],
     statusBarServices: ["kimi", "codex"],
-    selectedTools: ["codex_cli"],
+    statusBarDisplay: {
+      showIcon: true,
+      showPercentage: true,
+      showStateText: true,
+    },
     firstRunCompleted: true,
     credentials: { kimiBackend: "keychain" },
     proxy: {
@@ -66,24 +66,6 @@ const dashboardState: DashboardState = {
       },
     },
   },
-  tools: [
-    {
-      id: "codex_cli",
-      name: "Codex CLI",
-      toolType: "cli",
-      installed: true,
-      installPath: "/Users/test/.local/bin/codex",
-      launchAs: null,
-    },
-    {
-      id: "vscode",
-      name: "VS Code",
-      toolType: "ide",
-      installed: true,
-      installPath: "/Applications/Visual Studio Code.app",
-      launchAs: "Visual Studio Code",
-    },
-  ],
   cards: [
     {
       accountId: "legacy-kimi",
@@ -210,7 +192,6 @@ describe("App", () => {
     invokeMock.mockReset();
     invokeMock.mockImplementation((command: string) => {
       if (command === "get_dashboard_state") return Promise.resolve(dashboardState);
-      if (command === "set_selected_tools") return Promise.resolve(dashboardState);
       if (command === "save_proxy_settings") return Promise.resolve(dashboardState);
       return Promise.resolve(dashboardState);
     });
@@ -256,22 +237,11 @@ describe("App", () => {
     expect(screen.queryByText("unavailable")).not.toBeInTheDocument();
   });
 
-  it("shows selected and available tools", async () => {
-    const user = userEvent.setup();
+  it("does not expose the retired generic tools page", async () => {
     render(<App />);
 
-    await user.click(await screen.findByRole("button", { name: "工具" }));
-    await user.click(screen.getByRole("button", { name: /工具选择/ }));
-
-    expect(screen.getAllByText("Codex CLI").length).toBeGreaterThan(0);
-    expect(screen.getByText("VS Code")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "添加" }));
-
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith("set_selected_tools", {
-        toolIds: ["codex_cli", "vscode"],
-      }),
-    );
+    await screen.findByRole("button", { name: "概览" });
+    expect(screen.queryByRole("button", { name: "工具" })).not.toBeInTheDocument();
   });
 
   it("saves proxy settings from settings tab", async () => {
@@ -299,6 +269,46 @@ describe("App", () => {
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("set_status_bar_services", {
         serviceIds: ["kimi"],
+      }),
+    );
+  });
+
+  it("independently changes every menu bar display element", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "监控" }));
+
+    await user.click(screen.getByRole("checkbox", { name: "状态栏显示服务图标" }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("set_status_bar_display", {
+        display: {
+          showIcon: false,
+          showPercentage: true,
+          showStateText: true,
+        },
+      }),
+    );
+
+    await user.click(screen.getByRole("checkbox", { name: "状态栏显示百分比" }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("set_status_bar_display", {
+        display: {
+          showIcon: true,
+          showPercentage: false,
+          showStateText: true,
+        },
+      }),
+    );
+
+    await user.click(screen.getByRole("checkbox", { name: "状态栏显示状态文字" }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("set_status_bar_display", {
+        display: {
+          showIcon: true,
+          showPercentage: true,
+          showStateText: false,
+        },
       }),
     );
   });

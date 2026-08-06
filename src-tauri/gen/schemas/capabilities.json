@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default desktop permissions for Agent Quota Control","local":true,"windows":["main"],"permissions":["core:default","core:window:allow-start-dragging","core:window:allow-set-focus","dialog:default","opener:default","log:default"]}}
+{"default":{"identifier":"default","description":"Default desktop permissions for Agent Quota Control","local":true,"windows":["main"],"permissions":["core:default","core:window:allow-start-dragging","core:window:allow-set-focus","opener:default","log:default"]}}

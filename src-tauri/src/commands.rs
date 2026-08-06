@@ -2,7 +2,7 @@ use crate::credentials::AccountCredentials;
 use crate::providers::{codex::CodexProvider, kimi::KimiProvider};
 use crate::types::{
     DashboardState, KimiCredentialBackend, MonitorAccount, ProxySettings, ProxyTestResult,
-    ServiceKind, ServiceProxyConfig, TierEstimateView,
+    ServiceKind, ServiceProxyConfig, StatusBarDisplayConfig, TierEstimateView,
 };
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -61,22 +61,6 @@ pub async fn refresh_usage(
 }
 
 #[tauri::command]
-pub async fn set_selected_tools(
-    tool_ids: Vec<String>,
-    app: tauri::AppHandle,
-    state: tauri::State<'_, SharedRuntimeState>,
-) -> Result<DashboardState, String> {
-    let mut config = crate::config::load_config();
-    config.selected_tools = tool_ids;
-    crate::config::save_config(&config);
-    let dashboard = dashboard_state(&state)?;
-    crate::tray::update_tray(&app, &dashboard)?;
-    publish_widget_snapshot(&dashboard);
-    emit_dashboard_update(&app, &dashboard);
-    Ok(dashboard)
-}
-
-#[tauri::command]
 pub async fn set_selected_services(
     service_ids: Vec<String>,
     app: tauri::AppHandle,
@@ -102,6 +86,22 @@ pub async fn set_status_bar_services(
     let mut config = crate::config::load_config();
     config.status_bar_services = service_ids;
     crate::config::save_config(&config);
+    let dashboard = dashboard_state(&state)?;
+    crate::tray::update_tray(&app, &dashboard)?;
+    publish_widget_snapshot(&dashboard);
+    emit_dashboard_update(&app, &dashboard);
+    Ok(dashboard)
+}
+
+#[tauri::command]
+pub async fn set_status_bar_display(
+    display: StatusBarDisplayConfig,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SharedRuntimeState>,
+) -> Result<DashboardState, String> {
+    let mut config = crate::config::load_config();
+    config.status_bar_display = display;
+    crate::config::save_config_checked(&config)?;
     let dashboard = dashboard_state(&state)?;
     crate::tray::update_tray(&app, &dashboard)?;
     publish_widget_snapshot(&dashboard);
@@ -278,16 +278,6 @@ pub fn remove_account(
 }
 
 #[tauri::command]
-pub async fn launch_tool(tool_id: String, project_dir: Option<String>) -> Result<(), String> {
-    let tools = crate::harness::scan_tools();
-    let tool = tools
-        .iter()
-        .find(|tool| tool.id == tool_id)
-        .ok_or_else(|| format!("Tool not found: {tool_id}"))?;
-    crate::launcher::launch_tool(tool, project_dir.as_deref())
-}
-
-#[tauri::command]
 pub async fn reveal_config_dir() -> Result<(), String> {
     let path = crate::config::config_dir();
     std::fs::create_dir_all(&path).map_err(|e| format!("Failed to create config dir: {e}"))?;
@@ -362,7 +352,6 @@ pub async fn refresh_usage_inner(state: &SharedRuntimeState) -> Result<(), Strin
 
 pub fn dashboard_state(state: &SharedRuntimeState) -> Result<DashboardState, String> {
     let config = crate::config::load_config();
-    let tools = crate::harness::scan_tools();
     let guard = state
         .lock()
         .map_err(|error| format!("Failed to lock runtime state: {error}"))?;
@@ -415,7 +404,6 @@ pub fn dashboard_state(state: &SharedRuntimeState) -> Result<DashboardState, Str
         codex_estimates: estimates_for("codex", &codex_quota, &config, &usage_history),
         proxy_status,
         config,
-        tools,
         cards,
         kimi_quota,
         codex_quota,

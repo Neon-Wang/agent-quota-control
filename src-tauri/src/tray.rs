@@ -1,5 +1,7 @@
-use crate::types::{DashboardState, ServiceQuota, SufficiencyState, TierEstimateView, ToolType};
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+use crate::types::{
+    DashboardState, ServiceQuota, StatusBarDisplayConfig, SufficiencyState, TierEstimateView,
+};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{ActivationPolicy, AppHandle, Manager};
 
@@ -11,7 +13,11 @@ pub fn create_tray(app: &AppHandle, dashboard: &DashboardState) -> Result<(), St
         app,
         KIMI_TRAY_ID,
         include_bytes!("../icons/kimi_tray.png"),
-        service_title(&dashboard.kimi_quota, &dashboard.kimi_estimates),
+        service_title(
+            &dashboard.kimi_quota,
+            &dashboard.kimi_estimates,
+            &dashboard.config.status_bar_display,
+        ),
         kimi_tray_visible(dashboard),
         dashboard,
     )?;
@@ -19,7 +25,11 @@ pub fn create_tray(app: &AppHandle, dashboard: &DashboardState) -> Result<(), St
         app,
         CODEX_TRAY_ID,
         include_bytes!("../icons/codex_tray.png"),
-        service_title(&dashboard.codex_quota, &dashboard.codex_estimates),
+        service_title(
+            &dashboard.codex_quota,
+            &dashboard.codex_estimates,
+            &dashboard.config.status_bar_display,
+        ),
         codex_tray_visible(dashboard),
         dashboard,
     )?;
@@ -35,10 +45,7 @@ fn create_service_tray(
     dashboard: &DashboardState,
 ) -> Result<(), String> {
     let menu = build_menu(app, dashboard)?;
-    let icon = tauri::image::Image::from_bytes(icon_bytes)
-        .map_err(|e| format!("Failed to load tray icon: {e}"))?;
-    let tray = TrayIconBuilder::with_id(tray_id)
-        .icon(icon)
+    let mut tray_builder = TrayIconBuilder::with_id(tray_id)
         .title(title)
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -62,19 +69,25 @@ fn create_service_tray(
                         }
                     }
                 });
-            } else if let Some(tool_id) = id.strip_prefix("tool:") {
-                let tool_id = tool_id.to_string();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(error) = crate::commands::launch_tool(tool_id, None).await {
-                        log::warn!("Tray tool launch failed: {error}");
+            } else if id == "launch_chatgpt_7897" {
+                if let Err(error) = crate::chatgpt_launcher::launch_chatgpt_with_7897() {
+                    log::warn!("ChatGPT 7897 launch failed: {error}");
+                }
+                if let Some(state) = app.try_state::<crate::commands::SharedRuntimeState>() {
+                    if let Ok(dashboard) = crate::commands::dashboard_state(&state) {
+                        let _ = update_tray(app, &dashboard);
                     }
-                });
-            } else if id.starts_with("cli_tool:") {
-                show_dashboard(app);
+                }
             } else if id == "quit" {
                 app.exit(0);
             }
-        })
+        });
+    if dashboard.config.status_bar_display.show_icon {
+        let icon = tauri::image::Image::from_bytes(icon_bytes)
+            .map_err(|e| format!("Failed to load tray icon: {e}"))?;
+        tray_builder = tray_builder.icon(icon);
+    }
+    let tray = tray_builder
         .build(app)
         .map_err(|e| format!("Failed to create tray: {e}"))?;
     tray.set_visible(visible)
@@ -88,16 +101,25 @@ pub fn update_tray(app: &AppHandle, dashboard: &DashboardState) -> Result<(), St
         tray.set_menu(Some(menu))
             .map_err(|e| format!("Failed to update tray menu: {e}"))?;
         let _ = tray.set_visible(kimi_tray_visible(dashboard));
+        let _ = tray.set_icon(service_icon(
+            include_bytes!("../icons/kimi_tray.png"),
+            dashboard.config.status_bar_display.show_icon,
+        )?);
         let _ = tray.set_title(Some(&service_title(
             &dashboard.kimi_quota,
             &dashboard.kimi_estimates,
+            &dashboard.config.status_bar_display,
         )));
     } else if kimi_tray_visible(dashboard) {
         create_service_tray(
             app,
             KIMI_TRAY_ID,
             include_bytes!("../icons/kimi_tray.png"),
-            service_title(&dashboard.kimi_quota, &dashboard.kimi_estimates),
+            service_title(
+                &dashboard.kimi_quota,
+                &dashboard.kimi_estimates,
+                &dashboard.config.status_bar_display,
+            ),
             true,
             dashboard,
         )?;
@@ -108,16 +130,25 @@ pub fn update_tray(app: &AppHandle, dashboard: &DashboardState) -> Result<(), St
         tray.set_menu(Some(menu))
             .map_err(|e| format!("Failed to update tray menu: {e}"))?;
         let _ = tray.set_visible(codex_tray_visible(dashboard));
+        let _ = tray.set_icon(service_icon(
+            include_bytes!("../icons/codex_tray.png"),
+            dashboard.config.status_bar_display.show_icon,
+        )?);
         let _ = tray.set_title(Some(&service_title(
             &dashboard.codex_quota,
             &dashboard.codex_estimates,
+            &dashboard.config.status_bar_display,
         )));
     } else if codex_tray_visible(dashboard) {
         create_service_tray(
             app,
             CODEX_TRAY_ID,
             include_bytes!("../icons/codex_tray.png"),
-            service_title(&dashboard.codex_quota, &dashboard.codex_estimates),
+            service_title(
+                &dashboard.codex_quota,
+                &dashboard.codex_estimates,
+                &dashboard.config.status_bar_display,
+            ),
             true,
             dashboard,
         )?;
@@ -130,7 +161,23 @@ fn build_menu(app: &AppHandle, dashboard: &DashboardState) -> Result<Menu<tauri:
         .map_err(|e| e.to_string())?;
     let refresh = MenuItem::with_id(app, "refresh_usage", "刷新用量", true, None::<&str>)
         .map_err(|e| e.to_string())?;
-    let selected_tools = selected_tools_submenu(app, dashboard)?;
+    let chatgpt_installed = crate::chatgpt_launcher::is_chatgpt_installed();
+    let chatgpt_running = chatgpt_installed && crate::chatgpt_launcher::is_chatgpt_running();
+    let (chatgpt_label, chatgpt_enabled) = if !chatgpt_installed {
+        ("未找到 ChatGPT.app", false)
+    } else if chatgpt_running {
+        ("ChatGPT 已运行，请先完全退出", false)
+    } else {
+        ("通过 7897 代理打开 ChatGPT", true)
+    };
+    let launch_chatgpt = MenuItem::with_id(
+        app,
+        "launch_chatgpt_7897",
+        chatgpt_label,
+        chatgpt_enabled,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
     let quit =
         MenuItem::with_id(app, "quit", "退出", true, None::<&str>).map_err(|e| e.to_string())?;
     let sep1 = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
@@ -180,53 +227,23 @@ fn build_menu(app: &AppHandle, dashboard: &DashboardState) -> Result<Menu<tauri:
     }
     items.push(&refresh);
     items.push(&sep2);
-    items.push(&selected_tools);
+    items.push(&launch_chatgpt);
     items.push(&sep3);
     items.push(&quit);
 
     Menu::with_items(app, &items).map_err(|e| e.to_string())
 }
 
-fn selected_tools_submenu(
-    app: &AppHandle,
-    dashboard: &DashboardState,
-) -> Result<Submenu<tauri::Wry>, String> {
-    let selected = dashboard
-        .tools
-        .iter()
-        .filter(|tool| dashboard.config.selected_tools.contains(&tool.id))
-        .collect::<Vec<_>>();
-    if selected.is_empty() {
-        let empty = MenuItem::with_id(
-            app,
-            "no_selected_tools",
-            "没有已选择工具",
-            false,
-            None::<&str>,
-        )
-        .map_err(|e| e.to_string())?;
-        return Submenu::with_items(app, "已选择工具", true, &[&empty]).map_err(|e| e.to_string());
-    }
-
-    let mut owned_items = Vec::new();
-    for tool in selected {
-        let label = match tool.tool_type {
-            ToolType::IDE => format!("应用：{}", tool.name),
-            ToolType::CLI => format!("CLI：{}", tool.name),
-        };
-        let item_id = match tool.tool_type {
-            ToolType::IDE => format!("tool:{}", tool.id),
-            ToolType::CLI => format!("cli_tool:{}", tool.id),
-        };
-        let item = MenuItem::with_id(app, item_id, label, true, None::<&str>)
-            .map_err(|e| e.to_string())?;
-        owned_items.push(item);
-    }
-    let refs = owned_items
-        .iter()
-        .map(|item| item as &dyn tauri::menu::IsMenuItem<tauri::Wry>)
-        .collect::<Vec<_>>();
-    Submenu::with_items(app, "已选择工具", true, &refs).map_err(|e| e.to_string())
+fn service_icon(
+    icon_bytes: &'static [u8],
+    show_icon: bool,
+) -> Result<Option<tauri::image::Image<'static>>, String> {
+    show_icon
+        .then(|| {
+            tauri::image::Image::from_bytes(icon_bytes)
+                .map_err(|e| format!("Failed to load tray icon: {e}"))
+        })
+        .transpose()
 }
 
 fn show_dashboard(app: &AppHandle) {
@@ -249,12 +266,24 @@ fn service_summary(quota: &Option<ServiceQuota>, estimates: &[TierEstimateView])
     format!("{h} · {w} · {}", weekly_state(estimates))
 }
 
-fn service_title(quota: &Option<ServiceQuota>, estimates: &[TierEstimateView]) -> String {
-    let utilization = tier_pct(quota, "five_hour")
-        .map(|pct| format!("h{pct:.0}%"))
-        .or_else(|| weekly_pct(quota).map(|pct| format!("w{pct:.0}%")))
-        .unwrap_or_else(|| "w--%".to_string());
-    format!("{utilization} {}", weekly_state(estimates))
+fn service_title(
+    quota: &Option<ServiceQuota>,
+    estimates: &[TierEstimateView],
+    display: &StatusBarDisplayConfig,
+) -> String {
+    let mut parts = Vec::new();
+    if display.show_percentage {
+        parts.push(
+            tier_pct(quota, "five_hour")
+                .map(|pct| format!("h{pct:.0}%"))
+                .or_else(|| weekly_pct(quota).map(|pct| format!("w{pct:.0}%")))
+                .unwrap_or_else(|| "w--%".to_string()),
+        );
+    }
+    if display.show_state_text {
+        parts.push(weekly_state(estimates).to_string());
+    }
+    parts.join(" ")
 }
 
 fn kimi_tray_visible(dashboard: &DashboardState) -> bool {
@@ -280,6 +309,11 @@ fn service_tray_enabled(dashboard: &DashboardState, service: &str) -> bool {
             .status_bar_services
             .iter()
             .any(|id| id == service)
+        && status_bar_has_content(&dashboard.config.status_bar_display)
+}
+
+fn status_bar_has_content(display: &StatusBarDisplayConfig) -> bool {
+    display.show_icon || display.show_percentage || display.show_state_text
 }
 
 fn weekly_state(estimates: &[TierEstimateView]) -> &'static str {
@@ -363,7 +397,8 @@ mod tests {
         assert_eq!(
             service_title(
                 &quota,
-                &[estimate("seven_day", SufficiencyState::NotEnough)]
+                &[estimate("seven_day", SufficiencyState::NotEnough)],
+                &crate::types::StatusBarDisplayConfig::default(),
             ),
             "w70% 不够"
         );
@@ -401,9 +436,78 @@ mod tests {
         assert_eq!(
             service_title(
                 &quota,
-                &[estimate("weekly_limit", SufficiencyState::Enough)]
+                &[estimate("weekly_limit", SufficiencyState::Enough)],
+                &crate::types::StatusBarDisplayConfig::default(),
             ),
             "h12% 够"
         );
+    }
+
+    #[test]
+    fn tray_title_supports_independent_percentage_and_state_switches() {
+        let quota = Some(ServiceQuota {
+            service: "codex".to_string(),
+            display_name: "Codex".to_string(),
+            success: true,
+            tiers: vec![QuotaTier {
+                name: "seven_day".to_string(),
+                utilization: 70.0,
+                resets_at: None,
+                used: None,
+                limit: None,
+                remaining: None,
+            }],
+            error: None,
+            queried_at: None,
+            credential_valid: true,
+        });
+        let estimates = [estimate("seven_day", SufficiencyState::Unknown)];
+
+        assert_eq!(
+            service_title(
+                &quota,
+                &estimates,
+                &crate::types::StatusBarDisplayConfig {
+                    show_icon: true,
+                    show_percentage: true,
+                    show_state_text: false,
+                },
+            ),
+            "w70%"
+        );
+        assert_eq!(
+            service_title(
+                &quota,
+                &estimates,
+                &crate::types::StatusBarDisplayConfig {
+                    show_icon: true,
+                    show_percentage: false,
+                    show_state_text: true,
+                },
+            ),
+            "未知"
+        );
+        assert_eq!(
+            service_title(
+                &quota,
+                &estimates,
+                &crate::types::StatusBarDisplayConfig {
+                    show_icon: true,
+                    show_percentage: false,
+                    show_state_text: false,
+                },
+            ),
+            ""
+        );
+    }
+
+    #[test]
+    fn tray_requires_at_least_one_visible_display_element() {
+        assert!(status_bar_has_content(&StatusBarDisplayConfig::default()));
+        assert!(!status_bar_has_content(&StatusBarDisplayConfig {
+            show_icon: false,
+            show_percentage: false,
+            show_state_text: false,
+        }));
     }
 }

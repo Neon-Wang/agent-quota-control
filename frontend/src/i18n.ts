@@ -2,9 +2,8 @@ export type Locale = "zh-CN";
 
 const zhCN = {
   appName: "Agent 配额控制台",
-  appSubtitle: "用量与启动器",
+  appSubtitle: "用量与状态栏",
   dashboard: "概览",
-  tools: "工具",
   monitoring: "监控",
   settings: "设置",
   updated: "更新于",
@@ -12,7 +11,6 @@ const zhCN = {
   refresh: "刷新",
   loading: "正在加载控制台",
   proxyStatus: "代理状态",
-  chooseProjectFolder: "选择项目文件夹",
   kimiCode: "Kimi Code",
   codex: "Codex",
 } as const;

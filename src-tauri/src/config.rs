@@ -37,9 +37,9 @@ fn parse_config(content: &str) -> (AppConfig, bool) {
         log::warn!("Failed to parse config, using defaults: {e}");
         AppConfig::default()
     });
-    let migrated = config.version < 4;
-    if config.version < 4 {
-        config.version = 4;
+    let migrated = config.version < 5;
+    if config.version < 5 {
+        config.version = 5;
     }
     (config, migrated)
 }
@@ -76,8 +76,7 @@ mod tests {
         );
 
         assert!(migrated);
-        assert_eq!(config.version, 4);
-        assert_eq!(config.selected_tools, vec!["codex_cli"]);
+        assert_eq!(config.version, 5);
         assert_eq!(config.status_bar_services, vec!["kimi", "codex"]);
         assert_eq!(config.accounts.len(), 2);
         assert_eq!(config.accounts[0].id, "legacy-kimi");
@@ -101,7 +100,30 @@ mod tests {
             }"#,
         );
 
-        assert!(!migrated);
+        assert!(migrated);
+        assert_eq!(config.version, 5);
         assert!(config.accounts.is_empty());
+        assert!(config.status_bar_display.show_icon);
+        assert!(config.status_bar_display.show_percentage);
+        assert!(config.status_bar_display.show_state_text);
+    }
+
+    #[test]
+    fn version_four_migration_drops_legacy_tool_selection() {
+        let (config, migrated) = parse_config(
+            r#"{
+                "version": 4,
+                "selectedServices": ["codex"],
+                "statusBarServices": ["codex"],
+                "selectedTools": ["cursor", "codex_cli"],
+                "firstRunCompleted": true,
+                "accounts": []
+            }"#,
+        );
+
+        assert!(migrated);
+        let serialized = serde_json::to_string(&config).expect("config serializes");
+        assert!(!serialized.contains("selectedTools"));
+        assert!(!serialized.contains("cursor"));
     }
 }

@@ -1,4 +1,3 @@
-export type ToolType = "cli" | "ide";
 export type ProxyMode = "auto" | "on" | "off";
 export type KimiCredentialBackend = "keychain" | "encrypted_vault";
 export type SufficiencyState = "enough" | "tight" | "not_enough" | "unknown";
@@ -50,15 +49,6 @@ export interface ServiceQuota {
   credentialValid: boolean;
 }
 
-export interface ToolInfo {
-  id: string;
-  name: string;
-  toolType: ToolType;
-  installed: boolean;
-  installPath?: string | null;
-  launchAs?: string | null;
-}
-
 export interface ServiceProxyConfig {
   mode: ProxyMode;
   proxyUrl?: string | null;
@@ -75,12 +65,18 @@ export interface CredentialSettings {
   kimiBackend: KimiCredentialBackend;
 }
 
+export interface StatusBarDisplayConfig {
+  showIcon: boolean;
+  showPercentage: boolean;
+  showStateText: boolean;
+}
+
 export interface AppConfig {
   version: number;
   accounts: MonitorAccount[];
   selectedServices: string[];
   statusBarServices: string[];
-  selectedTools: string[];
+  statusBarDisplay: StatusBarDisplayConfig;
   firstRunCompleted: boolean;
   proxy: ProxySettings;
   credentials: CredentialSettings;
@@ -128,7 +124,6 @@ export interface CardSnapshot {
 
 export interface DashboardState {
   config: AppConfig;
-  tools: ToolInfo[];
   cards: CardSnapshot[];
   kimiQuota?: ServiceQuota | null;
   codexQuota?: ServiceQuota | null;

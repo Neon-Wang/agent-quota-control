@@ -5,17 +5,18 @@ import type {
   ProxySettings,
   ProxyTestResult,
   ServiceProxyConfig,
+  StatusBarDisplayConfig,
 } from "./types";
 
 export const api = {
   getDashboardState: () => invoke<DashboardState>("get_dashboard_state"),
   refreshUsage: () => invoke<DashboardState>("refresh_usage"),
-  setSelectedTools: (toolIds: string[]) =>
-    invoke<DashboardState>("set_selected_tools", { toolIds }),
   setSelectedServices: (serviceIds: string[]) =>
     invoke<DashboardState>("set_selected_services", { serviceIds }),
   setStatusBarServices: (serviceIds: string[]) =>
     invoke<DashboardState>("set_status_bar_services", { serviceIds }),
+  setStatusBarDisplay: (display: StatusBarDisplayConfig) =>
+    invoke<DashboardState>("set_status_bar_display", { display }),
   saveProxySettings: (settings: ProxySettings) =>
     invoke<DashboardState>("save_proxy_settings", { settings }),
   testProxy: (service: string, config: ServiceProxyConfig) =>
@@ -40,7 +41,5 @@ export const api = {
     invoke<DashboardState>("rename_account", { accountId, displayName }),
   removeAccount: (accountId: string) =>
     invoke<DashboardState>("remove_account", { accountId }),
-  launchTool: (toolId: string, projectDir?: string | null) =>
-    invoke<void>("launch_tool", { toolId, projectDir }),
   revealConfigDir: () => invoke<void>("reveal_config_dir"),
 };

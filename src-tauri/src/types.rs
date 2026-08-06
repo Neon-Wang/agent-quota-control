@@ -128,34 +128,10 @@ impl ServiceQuota {
     }
 }
 
-// ── Harness types ──
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum ToolType {
-    #[allow(clippy::upper_case_acronyms)]
-    CLI,
-    #[allow(clippy::upper_case_acronyms)]
-    IDE,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ToolInfo {
-    pub id: String,
-    pub name: String,
-    pub tool_type: ToolType,
-    pub installed: bool,
-    pub install_path: Option<String>,
-    /// How to launch: "Cursor", "Visual Studio Code", etc. Passed to `open -a`.
-    pub launch_as: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardState {
     pub config: AppConfig,
-    pub tools: Vec<ToolInfo>,
     pub cards: Vec<crate::widget_snapshot::CardSnapshot>,
     pub kimi_quota: Option<ServiceQuota>,
     pub codex_quota: Option<ServiceQuota>,
@@ -190,8 +166,8 @@ pub struct AppConfig {
     pub selected_services: Vec<String>,
     #[serde(default = "default_status_bar_services")]
     pub status_bar_services: Vec<String>,
-    #[serde(alias = "selected_tools")]
-    pub selected_tools: Vec<String>,
+    #[serde(default)]
+    pub status_bar_display: StatusBarDisplayConfig,
     #[serde(alias = "first_run_completed")]
     pub first_run_completed: bool,
     #[serde(default)]
@@ -205,15 +181,33 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            version: 4,
+            version: 5,
             accounts: default_accounts(),
             selected_services: vec!["kimi".to_string(), "codex".to_string()],
             status_bar_services: default_status_bar_services(),
-            selected_tools: vec![],
+            status_bar_display: StatusBarDisplayConfig::default(),
             first_run_completed: false,
             proxy: ProxySettings::default(),
             credentials: CredentialSettings::default(),
             quota_events: QuotaEventStore::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusBarDisplayConfig {
+    pub show_icon: bool,
+    pub show_percentage: bool,
+    pub show_state_text: bool,
+}
+
+impl Default for StatusBarDisplayConfig {
+    fn default() -> Self {
+        Self {
+            show_icon: true,
+            show_percentage: true,
+            show_state_text: true,
         }
     }
 }

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PointerEvent } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -10,26 +9,22 @@ import {
   Loader2,
   RefreshCw,
   Settings,
-  Wrench,
 } from "lucide-react";
 import { api } from "./api";
 import { AccountSettings } from "./components/AccountSettings";
-import { LaunchPanel } from "./components/LaunchPanel";
 import { MonitoringSettings } from "./components/MonitoringSettings";
 import { ProxySettings } from "./components/ProxySettings";
 import { QuotaCard } from "./components/QuotaCard";
-import { ToolList } from "./components/ToolList";
 import codexIcon from "./assets/codex.png";
 import kimiIcon from "./assets/kimi.png";
 import { t } from "./i18n";
 import { proxyBadgeLabel } from "./proxyDisplay";
-import type { DashboardState, ToolInfo } from "./types";
+import type { DashboardState } from "./types";
 
-type View = "dashboard" | "tools" | "monitoring" | "settings";
+type View = "dashboard" | "monitoring" | "settings";
 
 const navItems: Array<{ id: View; label: string; icon: typeof BarChart3 }> = [
   { id: "dashboard", label: t.dashboard, icon: BarChart3 },
-  { id: "tools", label: t.tools, icon: Wrench },
   { id: "monitoring", label: t.monitoring, icon: Activity },
   { id: "settings", label: t.settings, icon: Settings },
 ];
@@ -39,20 +34,6 @@ export function App() {
   const [state, setState] = useState<DashboardState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const selectedTools = useMemo(() => {
-    if (!state) return [];
-    return state.tools.filter((tool) =>
-      state.config.selectedTools.includes(tool.id),
-    );
-  }, [state]);
-
-  const availableTools = useMemo(() => {
-    if (!state) return [];
-    return state.tools.filter(
-      (tool) => !state.config.selectedTools.includes(tool.id),
-    );
-  }, [state]);
 
   const lastUpdated = useMemo(() => {
     const timestamps = (state?.cards ?? [])
@@ -96,24 +77,6 @@ export function App() {
     } catch (err) {
       setError(String(err));
     }
-  }
-
-  async function updateTools(toolIds: string[]) {
-    setState(await api.setSelectedTools(toolIds));
-  }
-
-  async function launchTool(tool: ToolInfo) {
-    let projectDir: string | null = null;
-    if (tool.toolType === "cli") {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: `${t.chooseProjectFolder}: ${tool.name}`,
-      });
-      if (typeof selected !== "string") return;
-      projectDir = selected;
-    }
-    await api.launchTool(tool.id, projectDir);
   }
 
   function beginWindowDrag(event: PointerEvent<HTMLElement>) {
@@ -202,19 +165,6 @@ export function App() {
           </div>
         )}
 
-        {state && view === "tools" && (
-          <div className="stack">
-            <LaunchPanel tools={selectedTools} onLaunch={launchTool} />
-            <ToolList
-              selectedTools={selectedTools}
-              availableTools={availableTools}
-              selectedToolIds={state.config.selectedTools}
-              onChange={updateTools}
-              onLaunch={launchTool}
-            />
-          </div>
-        )}
-
         {state && view === "monitoring" && (
           <div className="settings-grid">
             <MonitoringSettings state={state} onChange={setState} />
@@ -231,7 +181,7 @@ export function App() {
                 配置目录
               </div>
               <p className="muted">
-                打开本地配置目录，用于备份或检查代理、工具选择和用量事件。
+                打开本地配置目录，用于备份或检查代理与用量事件。
               </p>
               <button className="secondary" type="button" onClick={api.revealConfigDir}>
                 打开配置目录
