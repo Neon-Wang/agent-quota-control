@@ -45,11 +45,21 @@ export function QuotaCard({ card, iconSrc }: QuotaCardProps) {
       <div className="quota-header">
         <div className="service-heading">
           <img src={iconSrc} alt="" aria-hidden />
-          <div>
-            <p className="eyebrow">{card.serviceDisplayName}</p>
-            <h3>
-              {showAccountName ? card.accountDisplayName : card.serviceDisplayName}
-            </h3>
+          <div
+            className={
+              showAccountName
+                ? "service-copy"
+                : "service-copy service-copy-single"
+            }
+          >
+            {showAccountName ? (
+              <>
+                <p className="eyebrow">{card.serviceDisplayName}</p>
+                <h3>{card.accountDisplayName}</h3>
+              </>
+            ) : (
+              <h3>{card.serviceDisplayName}</h3>
+            )}
           </div>
         </div>
         <div className={`status-badge ${statusTone}`}>

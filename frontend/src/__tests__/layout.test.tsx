@@ -76,6 +76,13 @@ describe("dashboard card layout", () => {
     expect(titleRule).toMatch(/align-items:\s*center;/);
   });
 
+  it("removes the dark sidebar border when the window is inactive", () => {
+    const styles = readFileSync(resolve("src/styles.css"), "utf8");
+    expect(styles).toMatch(
+      /:root\[data-theme="dark"\] \.window-inactive \.sidebar[\s\S]*?border-color:\s*transparent;/,
+    );
+  });
+
   it("styles settings controls for press feedback, contrast, and inactive primary", () => {
     const styles = readFileSync(resolve("src/styles.css"), "utf8");
     const primaryActive = styles.match(

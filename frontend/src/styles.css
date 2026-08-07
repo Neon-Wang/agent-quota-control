@@ -236,7 +236,9 @@ select {
     0 8px 28px rgba(0, 0, 0, 0.05);
 }
 
-.window-inactive .sidebar {
+.window-inactive .sidebar,
+:root[data-theme="dark"] .window-inactive .sidebar,
+:root[data-theme="light"] .window-inactive .sidebar {
   background: color-mix(in srgb, var(--sidebar-solid) 78%, transparent);
   border-color: transparent;
   box-shadow: none;
@@ -244,9 +246,6 @@ select {
 
 :root[data-theme="light"] .window-inactive .sidebar {
   overflow: hidden;
-  background: color-mix(in srgb, var(--sidebar-solid) 78%, transparent);
-  border-color: transparent;
-  box-shadow: none;
 }
 
 .window-inactive .nav-item.active {
@@ -789,11 +788,23 @@ select {
   align-items: flex-start;
 }
 
+.service-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  align-content: center;
+}
+
+.service-copy-single {
+  align-content: center;
+}
+
 .service-heading .eyebrow {
-  margin-bottom: 2px;
+  margin: 0;
 }
 
 .service-heading h3 {
+  margin: 0;
   font-size: 17px;
   font-weight: 650;
   letter-spacing: -0.02em;
