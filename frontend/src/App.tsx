@@ -13,24 +13,22 @@ import {
 import { api } from "./api";
 import { AccountSettings } from "./components/AccountSettings";
 import { AppearanceSettings } from "./components/AppearanceSettings";
+import { LanguageSettings } from "./components/LanguageSettings";
 import { MonitoringSettings } from "./components/MonitoringSettings";
 import { ProxySettings } from "./components/ProxySettings";
 import { QuotaCard } from "./components/QuotaCard";
 import appMark from "./assets/app-mark.png";
 import codexIcon from "./assets/codex.png";
 import kimiIcon from "./assets/kimi.png";
-import { t } from "./i18n";
+import { useTranslations } from "./i18n";
+import type { Translator } from "./i18n/translate";
 import type { DashboardState } from "./types";
 
 type View = "dashboard" | "monitoring" | "settings";
 
-const navItems: Array<{ id: View; label: string; icon: typeof BarChart3 }> = [
-  { id: "dashboard", label: t.dashboard, icon: BarChart3 },
-  { id: "monitoring", label: t.monitoring, icon: Activity },
-  { id: "settings", label: t.settings, icon: Settings },
-];
-
 export function App() {
+  const t = useTranslations("common");
+  const settingsT = useTranslations("settings");
   const [view, setView] = useState<View>("dashboard");
   const [pressedView, setPressedView] = useState<View | null>(null);
   const [state, setState] = useState<DashboardState | null>(null);
@@ -40,6 +38,12 @@ export function App() {
   const [contentScrolled, setContentScrolled] = useState(false);
   const contentScrollRef = useRef<HTMLDivElement>(null);
   const scrollEdgeRef = useRef<HTMLDivElement>(null);
+
+  const navItems: Array<{ id: View; label: string; icon: typeof BarChart3 }> = [
+    { id: "dashboard", label: t("dashboard"), icon: BarChart3 },
+    { id: "monitoring", label: t("monitoring"), icon: Activity },
+    { id: "settings", label: t("settings"), icon: Settings },
+  ];
 
   useEffect(() => {
     void loadState();
@@ -97,8 +101,6 @@ export function App() {
   }, []);
 
   useLayoutEffect(() => {
-    // Same-frame nudge so WebKit resamples backdrop-filter with the new
-    // window-active / window-inactive paint, instead of lagging one frame.
     const edge = scrollEdgeRef.current;
     if (!edge) return;
     const previousTransform = edge.style.transform;
@@ -141,7 +143,7 @@ export function App() {
     return (
       <main className="app-loading" aria-busy="true">
         <Loader2 size={18} strokeWidth={1.75} aria-hidden className="spin" />
-        {t.loading}
+        {t("loading")}
       </main>
     );
   }
@@ -152,11 +154,11 @@ export function App() {
         <div className="brand" data-tauri-drag-region onPointerDown={beginWindowDrag}>
           <img className="brand-mark" src={appMark} alt="" draggable={false} />
           <div className="brand-copy">
-            <h1>{t.appName}</h1>
-            <p>{t.appSubtitle}</p>
+            <h1>{t("app_name")}</h1>
+            <p>{t("app_subtitle")}</p>
           </div>
         </div>
-        <nav aria-label="主导航" data-tauri-no-drag>
+        <nav aria-label={t("main_nav")} data-tauri-no-drag>
           {navItems.map((item) => {
             const Icon = item.icon;
             return (
@@ -202,26 +204,26 @@ export function App() {
         >
           <div className="topbar-actions" data-tauri-no-drag>
             {state && (
-              <div className="proxy-pills" aria-label={t.proxyStatus}>
+              <div className="proxy-pills" aria-label={t("proxy_status")}>
                 <span
                   className="topbar-status"
-                  aria-label={`Kimi：${serviceHealth(state.cards, "kimi").label}`}
+                  aria-label={`${t("kimi")}：${serviceHealth(state.cards, "kimi", t).label}`}
                 >
                   <span
-                    className={`status-dot ${serviceHealth(state.cards, "kimi").tone}`}
+                    className={`status-dot ${serviceHealth(state.cards, "kimi", t).tone}`}
                     aria-hidden
                   />
-                  Kimi
+                  {t("kimi")}
                 </span>
                 <span
                   className="topbar-status"
-                  aria-label={`Codex：${serviceHealth(state.cards, "codex").label}`}
+                  aria-label={`${t("codex")}：${serviceHealth(state.cards, "codex", t).label}`}
                 >
                   <span
-                    className={`status-dot ${serviceHealth(state.cards, "codex").tone}`}
+                    className={`status-dot ${serviceHealth(state.cards, "codex", t).tone}`}
                     aria-hidden
                   />
-                  Codex
+                  {t("codex")}
                 </span>
               </div>
             )}
@@ -232,7 +234,7 @@ export function App() {
               data-tauri-no-drag
             >
               <RefreshCw size={14} strokeWidth={1.75} aria-hidden />
-              {t.refresh}
+              {t("refresh")}
             </button>
           </div>
           <div className="topbar-title">
@@ -275,8 +277,8 @@ export function App() {
                 ))}
                 {state.cards.length === 0 && (
                   <div className="dashboard-empty">
-                    <h3>还没有监控账号</h3>
-                    <p>在“监控”中添加 Kimi 或 Codex 账号。</p>
+                    <h3>{t("empty_accounts_title")}</h3>
+                    <p>{t("empty_accounts_body")}</p>
                   </div>
                 )}
               </div>
@@ -293,16 +295,17 @@ export function App() {
               <div className="settings-grid">
                 <ProxySettings state={state} onChange={setState} />
                 <AppearanceSettings />
+                <LanguageSettings />
                 <section className="panel">
                   <div className="panel-title">
                     <Folder size={15} strokeWidth={1.75} aria-hidden />
-                    配置目录
+                    {settingsT("config_dir")}
                   </div>
                   <p className="muted panel-description">
-                    账号配置与用量历史会保存在本机目录中。
+                    {settingsT("config_dir_hint")}
                   </p>
                   <button className="secondary" type="button" onClick={api.revealConfigDir}>
-                    在访达中显示
+                    {settingsT("reveal_in_finder")}
                   </button>
                 </section>
               </div>
@@ -317,31 +320,32 @@ export function App() {
 function serviceHealth(
   cards: DashboardState["cards"],
   service: DashboardState["cards"][number]["service"],
+  t: Translator<"common">,
 ): {
   tone: "connected" | "direct" | "warning" | "problem";
   label: string;
 } {
   const serviceCards = cards.filter((card) => card.service === service);
   if (serviceCards.length === 0) {
-    return { tone: "direct", label: "尚未配置账号" };
+    return { tone: "direct", label: t("health_no_account") };
   }
 
   const healthyCards = serviceCards.filter(
     (card) => card.status === "fresh" || card.status === "stale",
   );
   if (healthyCards.length === serviceCards.length) {
-    return { tone: "connected", label: "登录正常" };
+    return { tone: "connected", label: t("health_ok") };
   }
   if (serviceCards.some((card) => card.status === "login_expired")) {
     return healthyCards.length > 0
-      ? { tone: "warning", label: "部分账号需要登录" }
-      : { tone: "problem", label: "需要登录" };
+      ? { tone: "warning", label: t("health_partial_login") }
+      : { tone: "problem", label: t("health_needs_login") };
   }
   if (healthyCards.length > 0) {
-    return { tone: "warning", label: "部分账号暂时不可用" };
+    return { tone: "warning", label: t("health_partial_unavailable") };
   }
   if (serviceCards.some((card) => card.status === "update_failed")) {
-    return { tone: "warning", label: "刷新失败" };
+    return { tone: "warning", label: t("health_refresh_failed") };
   }
-  return { tone: "direct", label: "等待数据" };
+  return { tone: "direct", label: t("health_waiting") };
 }

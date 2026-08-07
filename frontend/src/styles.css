@@ -1460,6 +1460,57 @@ select {
   margin-top: 8px;
 }
 
+.macos-popup {
+  position: relative;
+  margin-top: 8px;
+}
+
+.macos-popup select {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  min-height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text);
+  padding: 0 28px 0 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 28px;
+  box-shadow: none;
+  cursor: default;
+}
+
+.macos-popup select:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.macos-popup select:active {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.macos-popup-chevron {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+:root[data-theme="dark"] .macos-popup select {
+  background: #1a1919;
+  color: #f5f5f7;
+  box-shadow: none;
+}
+
+:root[data-theme="dark"] .macos-popup select:active {
+  background: #242323;
+}
+
 .proxy-editor {
   display: grid;
   gap: 10px;

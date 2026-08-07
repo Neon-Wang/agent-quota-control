@@ -1,6 +1,7 @@
 import { SunMoon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useTranslations } from "../i18n";
 import {
   applyThemePreference,
   readThemePreference,
@@ -9,13 +10,17 @@ import {
   type ThemePreference,
 } from "../theme";
 
-const themeOptions: Array<{ id: ThemePreference; label: string }> = [
-  { id: "light", label: "浅色" },
-  { id: "dark", label: "深色" },
-  { id: "system", label: "跟随系统" },
+const themeOptions: Array<{
+  id: ThemePreference;
+  labelKey: "theme_light" | "theme_dark" | "theme_system";
+}> = [
+  { id: "light", labelKey: "theme_light" },
+  { id: "dark", labelKey: "theme_dark" },
+  { id: "system", labelKey: "theme_system" },
 ];
 
 export function AppearanceSettings() {
+  const t = useTranslations("settings");
   const [preference, setPreference] = useState<ThemePreference>(() =>
     readThemePreference(),
   );
@@ -40,9 +45,9 @@ export function AppearanceSettings() {
     <section className="panel">
       <div className="panel-title">
         <SunMoon size={15} strokeWidth={1.75} aria-hidden />
-        外观
+        {t("appearance")}
       </div>
-      <div className="segmented" role="group" aria-label="外观模式">
+      <div className="segmented" role="group" aria-label={t("appearance_mode")}>
         {themeOptions.map((option) => (
           <button
             key={option.id}
@@ -65,7 +70,7 @@ export function AppearanceSettings() {
               setPressedTheme(null);
             }}
           >
-            {option.label}
+            {t(option.labelKey)}
           </button>
         ))}
       </div>

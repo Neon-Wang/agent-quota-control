@@ -1,6 +1,8 @@
 import { Network, Plug } from "lucide-react";
 import { useState } from "react";
 import { api } from "../api";
+import { useTranslations } from "../i18n";
+import type { Translator } from "../i18n/translate";
 import { proxyDetailLabel } from "../proxyDisplay";
 import type {
   DashboardState,
@@ -15,6 +17,9 @@ interface ProxySettingsProps {
 }
 
 export function ProxySettings({ state, onChange }: ProxySettingsProps) {
+  const t = useTranslations("settings");
+  const common = useTranslations("common");
+  const dashboard = useTranslations("dashboard");
   const [settings, setSettings] = useState<ProxySettingsType>(state.config.proxy);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -24,7 +29,8 @@ export function ProxySettings({ state, onChange }: ProxySettingsProps) {
 
   async function test(service: "kimi" | "codex") {
     const result = await api.testProxy(service, settings[service]);
-    setMessage(`${service === "kimi" ? "Kimi Code" : "Codex"}：${proxyDetailLabel(result)}`);
+    const name = service === "kimi" ? common("kimi_code") : common("codex");
+    setMessage(`${name}：${proxyDetailLabel(result, dashboard)}`);
   }
 
   function update(service: "kimi" | "codex", next: ServiceProxyConfig) {
@@ -35,23 +41,23 @@ export function ProxySettings({ state, onChange }: ProxySettingsProps) {
     <section className="panel wide">
       <div className="panel-title">
         <Network size={15} strokeWidth={1.75} aria-hidden />
-        网络代理
+        {t("network_proxy")}
       </div>
-      <p className="muted panel-description">
-        「自动」会先试你填的地址，再尝试常用本地端口。
-      </p>
+      <p className="muted panel-description">{t("proxy_auto_hint")}</p>
       <div className="settings-grid two">
         <ServiceProxyEditor
-          label="Kimi Code"
+          label={common("kimi_code")}
           value={settings.kimi}
           onChange={(next) => update("kimi", next)}
           onTest={() => void test("kimi")}
+          t={t}
         />
         <ServiceProxyEditor
-          label="Codex"
+          label={common("codex")}
           value={settings.codex}
           onChange={(next) => update("codex", next)}
           onTest={() => void test("codex")}
+          t={t}
         />
       </div>
       {message && <p className="notice">{message}</p>}
@@ -60,9 +66,9 @@ export function ProxySettings({ state, onChange }: ProxySettingsProps) {
           className="primary"
           type="button"
           onClick={save}
-          aria-label="保存代理设置"
+          aria-label={t("save_proxy_settings")}
         >
-          应用更改
+          {t("apply_changes")}
         </button>
       </div>
     </section>
@@ -74,11 +80,13 @@ function ServiceProxyEditor({
   value,
   onChange,
   onTest,
+  t,
 }: {
   label: string;
   value: ServiceProxyConfig;
   onChange: (value: ServiceProxyConfig) => void;
   onTest: () => void;
+  t: Translator<"settings">;
 }) {
   const [pressedMode, setPressedMode] = useState<ProxyMode | null>(null);
 
@@ -89,7 +97,11 @@ function ServiceProxyEditor({
   return (
     <div className="proxy-editor">
       <h3 className="subhead">{label}</h3>
-      <div className="segmented" role="group" aria-label={`${label} 代理模式`}>
+      <div
+        className="segmented"
+        role="group"
+        aria-label={t("proxy_mode", { service: label })}
+      >
         {(["auto", "on", "off"] as ProxyMode[]).map((mode) => (
           <button
             key={mode}
@@ -111,12 +123,12 @@ function ServiceProxyEditor({
               setPressedMode(null);
             }}
           >
-            {modeLabel(mode)}
+            {modeLabel(mode, t)}
           </button>
         ))}
       </div>
       <div className="proxy-url-field">
-        <span className="proxy-url-label">代理 URL</span>
+        <span className="proxy-url-label">{t("proxy_url")}</span>
         <div className="proxy-url-row">
           <input
             value={value.proxyUrl ?? ""}
@@ -124,11 +136,11 @@ function ServiceProxyEditor({
               onChange({ ...value, proxyUrl: event.currentTarget.value || null })
             }
             placeholder="http://127.0.0.1:7897"
-            aria-label={`${label} 代理 URL`}
+            aria-label={t("proxy_url_for", { service: label })}
           />
           <button className="secondary compact" type="button" onClick={onTest}>
             <Plug size={13} strokeWidth={1.75} aria-hidden />
-            测试连接
+            {t("test_connection")}
           </button>
         </div>
       </div>
@@ -136,8 +148,8 @@ function ServiceProxyEditor({
   );
 }
 
-function modeLabel(mode: ProxyMode): string {
-  if (mode === "auto") return "自动";
-  if (mode === "on") return "开启";
-  return "关闭";
+function modeLabel(mode: ProxyMode, t: Translator<"settings">): string {
+  if (mode === "auto") return t("mode_auto");
+  if (mode === "on") return t("mode_on");
+  return t("mode_off");
 }

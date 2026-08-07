@@ -1,5 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { renderWithI18n as render } from "../test/render";
 import type { QuotaEstimate } from "../types";
 import { UsageTrendChart } from "./UsageTrendChart";
 

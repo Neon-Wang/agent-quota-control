@@ -1,7 +1,8 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
+import { renderWithI18n as render } from "../test/render";
 import type { DashboardState } from "../types";
 
 const invokeMock = vi.fn();
@@ -428,6 +429,7 @@ describe("App", () => {
   it("lets appearance switch between light, dark, and system", async () => {
     const user = userEvent.setup();
     localStorage.clear();
+    localStorage.setItem("agent-quota-control.locale", "zh-CN");
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "设置" }));
@@ -448,6 +450,19 @@ describe("App", () => {
     fireEvent.click(dark);
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(dark).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("switches interface language from settings", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "设置" }));
+    const language = screen.getByLabelText("语言");
+    await user.selectOptions(language, "en");
+
+    expect(await screen.findByRole("button", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Agent Quota Control" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Language")).toHaveValue("en");
   });
 
   it("lets a monitored service be hidden from the menu bar independently", async () => {

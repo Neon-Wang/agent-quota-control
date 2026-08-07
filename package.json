@@ -9,6 +9,7 @@
     "build:macos-widget": "bash scripts/build-macos-widget.sh",
     "build:macos-app": "bash scripts/build-macos-app-with-widget.sh",
     "tauri": "tauri",
+    "i18n:generate": "pnpm --dir frontend i18n:generate",
     "dev:renderer": "pnpm --dir frontend dev",
     "build:renderer": "pnpm --dir frontend build",
     "typecheck": "pnpm --dir frontend typecheck",
