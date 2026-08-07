@@ -262,10 +262,26 @@ select {
 .brand {
   display: flex;
   align-items: center;
-  min-height: 58px;
-  margin: 0 0 4px;
-  padding: 0 8px 0 78px;
+  gap: 10px;
+  min-height: 0;
+  margin: 0 0 10px;
+  padding: 48px 8px 6px;
   user-select: none;
+}
+
+.brand-mark {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 50%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.brand-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
 }
 
 .brand h1,
@@ -285,6 +301,7 @@ select {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.01em;
+  line-height: 1.2;
 }
 
 .brand p,
@@ -292,6 +309,7 @@ select {
   color: var(--muted);
   font-size: 11px;
   font-weight: 500;
+  line-height: 1.25;
 }
 
 .sidebar nav {
@@ -1026,32 +1044,15 @@ select {
 
 .trend-pending-mark {
   position: relative;
+  display: grid;
+  place-items: center;
   width: 30px;
   height: 30px;
   flex: 0 0 auto;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background:
-    linear-gradient(
-        135deg,
-        transparent 45%,
-        var(--ok-fill) 46% 52%,
-        transparent 53%
-      )
-      center / 18px 14px no-repeat,
-    var(--surface);
-}
-
-.trend-pending-mark::after {
-  content: "";
-  position: absolute;
-  right: 6px;
-  top: 7px;
-  width: 5px;
-  height: 5px;
-  border: 2px solid var(--ok-fill);
-  border-radius: 50%;
   background: var(--surface);
+  color: var(--ok-fill);
 }
 
 .trend-pending strong {
@@ -1447,13 +1448,16 @@ select {
   box-shadow: none;
 }
 
-.appearance-segmented {
-  max-width: 360px;
+.panel-description {
+  margin-bottom: 12px;
+}
+
+.panel > .segmented {
   margin-bottom: 0;
 }
 
-.panel-description {
-  margin-bottom: 12px;
+.panel-title + .segmented {
+  margin-top: 8px;
 }
 
 .proxy-editor {
@@ -1478,6 +1482,54 @@ select {
 
 .proxy-editor .subhead + .segmented {
   margin-top: -2px;
+}
+
+.proxy-url-field {
+  display: grid;
+  gap: 6px;
+}
+
+.proxy-url-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.proxy-url-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.proxy-url-row input {
+  flex: 1 1 180px;
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: #ffffff;
+  color: var(--text);
+  padding: 0 10px;
+  font: inherit;
+}
+
+.proxy-url-row input:focus {
+  border-color: var(--accent);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+  outline: none;
+}
+
+:root[data-theme="dark"] .proxy-url-row input {
+  border-color: var(--border-strong);
+  background: var(--surface-secondary);
+  box-shadow: none;
+}
+
+.proxy-url-row .compact {
+  flex: 0 0 auto;
+  min-height: 32px;
 }
 
 .button-row {
@@ -1572,6 +1624,10 @@ select {
   display: grid;
   gap: 2px;
   min-width: 0;
+}
+
+.account-name-stack-single {
+  align-content: center;
 }
 
 .account-name-slot {

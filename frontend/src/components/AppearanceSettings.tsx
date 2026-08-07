@@ -42,10 +42,7 @@ export function AppearanceSettings() {
         <SunMoon size={15} strokeWidth={1.75} aria-hidden />
         外观
       </div>
-      <p className="muted panel-description">
-        选择浅色、深色，或跟随 macOS 系统外观。
-      </p>
-      <div className="segmented appearance-segmented" role="group" aria-label="外观模式">
+      <div className="segmented" role="group" aria-label="外观模式">
         {themeOptions.map((option) => (
           <button
             key={option.id}

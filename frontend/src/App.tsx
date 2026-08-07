@@ -16,6 +16,7 @@ import { AppearanceSettings } from "./components/AppearanceSettings";
 import { MonitoringSettings } from "./components/MonitoringSettings";
 import { ProxySettings } from "./components/ProxySettings";
 import { QuotaCard } from "./components/QuotaCard";
+import appMark from "./assets/app-mark.png";
 import codexIcon from "./assets/codex.png";
 import kimiIcon from "./assets/kimi.png";
 import { t } from "./i18n";
@@ -149,7 +150,8 @@ export function App() {
     <main className={`app-shell ${windowFocused ? "window-active" : "window-inactive"}`}>
       <aside className="sidebar">
         <div className="brand" data-tauri-drag-region onPointerDown={beginWindowDrag}>
-          <div>
+          <img className="brand-mark" src={appMark} alt="" draggable={false} />
+          <div className="brand-copy">
             <h1>{t.appName}</h1>
             <p>{t.appSubtitle}</p>
           </div>
@@ -289,18 +291,18 @@ export function App() {
 
             {state && view === "settings" && (
               <div className="settings-grid">
-                <AppearanceSettings />
                 <ProxySettings state={state} onChange={setState} />
+                <AppearanceSettings />
                 <section className="panel">
                   <div className="panel-title">
                     <Folder size={15} strokeWidth={1.75} aria-hidden />
                     配置目录
                   </div>
-                  <p className="muted">
-                    配置与用量历史保存在这里，可打开检查或备份。
+                  <p className="muted panel-description">
+                    账号配置与用量历史会保存在本机目录中。
                   </p>
                   <button className="secondary" type="button" onClick={api.revealConfigDir}>
-                    打开配置目录
+                    在访达中显示
                   </button>
                 </section>
               </div>

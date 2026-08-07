@@ -100,7 +100,7 @@ export function AccountSettings({ state, onChange }: AccountSettingsProps) {
             <KeyRound size={15} strokeWidth={1.75} aria-hidden />
             上游监控账号
           </div>
-          <p className="muted">每个账号会生成独立的概览卡片，并可在桌面 Widget 中选择。</p>
+          <p className="muted">每个账号对应一张概览卡片，也可用于桌面 Widget。</p>
         </div>
         <div className="button-row account-add-actions">
           <button className="secondary compact" type="button" onClick={() => beginAdd("kimi")}>
@@ -174,7 +174,17 @@ export function AccountSettings({ state, onChange }: AccountSettingsProps) {
       {error && <p className="error-copy account-error">{error}</p>}
 
       <div className="account-list">
-        {state.config.accounts.map((account) => (
+        {state.config.accounts.map((account) => {
+          const serviceLabel = account.service === "kimi" ? "Kimi Code" : "Codex";
+          const nameMatchesService =
+            account.displayName.trim() === serviceLabel;
+          const subtitle = nameMatchesService
+            ? account.providerIdentityHint ?? null
+            : [serviceLabel, account.providerIdentityHint]
+                .filter(Boolean)
+                .join(" · ");
+
+          return (
           <div className="account-row" key={account.id}>
             <div className="account-identity">
               <img
@@ -183,7 +193,13 @@ export function AccountSettings({ state, onChange }: AccountSettingsProps) {
                 alt=""
                 aria-hidden
               />
-              <div className="account-name-stack">
+              <div
+                className={
+                  subtitle
+                    ? "account-name-stack"
+                    : "account-name-stack account-name-stack-single"
+                }
+              >
                 <div className="account-name-slot">
                   {editingId === account.id ? (
                     <input
@@ -207,10 +223,7 @@ export function AccountSettings({ state, onChange }: AccountSettingsProps) {
                     <strong>{account.displayName}</strong>
                   )}
                 </div>
-                <small>
-                  {account.service === "kimi" ? "Kimi Code" : "Codex"}
-                  {account.providerIdentityHint ? ` · ${account.providerIdentityHint}` : ""}
-                </small>
+                {subtitle ? <small>{subtitle}</small> : null}
               </div>
             </div>
             <div className="account-row-actions">
@@ -235,7 +248,8 @@ export function AccountSettings({ state, onChange }: AccountSettingsProps) {
               )}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

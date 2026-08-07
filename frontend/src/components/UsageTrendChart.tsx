@@ -1,3 +1,4 @@
+import { ChartSpline } from "lucide-react";
 import type { QuotaEstimate, UsageChartPoint } from "../types";
 
 interface UsageTrendChartProps {
@@ -35,7 +36,9 @@ export function UsageTrendChart({
   if (observedPoints.length < 2) {
     return (
       <div className="trend-pending" role="status" aria-live="polite">
-        <span className="trend-pending-mark" aria-hidden="true" />
+        <span className="trend-pending-mark" aria-hidden="true">
+          <ChartSpline size={16} strokeWidth={1.75} />
+        </span>
         <div>
           <strong>趋势图正在建立</strong>
           <p>短期预测至少需要 5 个样本并稳定覆盖 20 分钟；否则继续积累数据。</p>

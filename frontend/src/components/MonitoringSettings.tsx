@@ -12,12 +12,10 @@ const services = [
   {
     id: "kimi",
     name: "Kimi Code",
-    description: "获取 Kimi Code 的用量和频限状态。",
   },
   {
     id: "codex",
     name: "Codex",
-    description: "通过 Codex 登录信息获取用量状态。",
   },
 ] as const;
 
@@ -68,7 +66,6 @@ export function MonitoringSettings({ state, onChange }: MonitoringSettingsProps)
             <div className="switch-row" key={service.id}>
               <span>
                 <strong>{service.name}</strong>
-                <small>{service.description}</small>
               </span>
               <div className="service-switches">
                 <label>
@@ -113,7 +110,6 @@ export function MonitoringSettings({ state, onChange }: MonitoringSettingsProps)
           <PanelTop size={15} strokeWidth={1.75} aria-hidden />
           状态栏样式
         </div>
-        <p className="muted">三个元素可以独立开关并自由组合。</p>
         {displayOptions.map(({ key, label }) => (
           <div className="switch-row" key={key}>
             <span>

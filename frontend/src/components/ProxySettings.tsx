@@ -38,7 +38,7 @@ export function ProxySettings({ state, onChange }: ProxySettingsProps) {
         网络代理
       </div>
       <p className="muted panel-description">
-        为每项服务单独选择连接方式。自动模式会优先尝试填写的地址，再检查常用本地端口。
+        「自动」会先试你填的地址，再尝试常用本地端口。
       </p>
       <div className="settings-grid two">
         <ServiceProxyEditor
@@ -115,20 +115,23 @@ function ServiceProxyEditor({
           </button>
         ))}
       </div>
-      <label className="field">
-        代理 URL
-        <input
-          value={value.proxyUrl ?? ""}
-          onChange={(event) =>
-            onChange({ ...value, proxyUrl: event.currentTarget.value || null })
-          }
-          placeholder="http://127.0.0.1:7897"
-        />
-      </label>
-      <button className="secondary compact" type="button" onClick={onTest}>
-        <Plug size={13} strokeWidth={1.75} aria-hidden />
-        测试连接
-      </button>
+      <div className="proxy-url-field">
+        <span className="proxy-url-label">代理 URL</span>
+        <div className="proxy-url-row">
+          <input
+            value={value.proxyUrl ?? ""}
+            onChange={(event) =>
+              onChange({ ...value, proxyUrl: event.currentTarget.value || null })
+            }
+            placeholder="http://127.0.0.1:7897"
+            aria-label={`${label} 代理 URL`}
+          />
+          <button className="secondary compact" type="button" onClick={onTest}>
+            <Plug size={13} strokeWidth={1.75} aria-hidden />
+            测试连接
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
