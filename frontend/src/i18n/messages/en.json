@@ -26,8 +26,8 @@
   "dashboard": {
     "quota_aria": "{name} quota",
     "needs_login": "Sign-in required",
-    "login_expired": "Sign-in expired. Sign in again, then refresh.",
-    "waiting_first_refresh": "Waiting for the first background usage refresh.",
+    "login_expired": "Sign-in expired. Sign in again, then tap Refresh above.",
+    "waiting_first_refresh": "Fetching first usage sample…",
     "tier_5h": "5 hours",
     "tier_7d": "7 days",
     "no_5h_limit": "No 5-hour limit",

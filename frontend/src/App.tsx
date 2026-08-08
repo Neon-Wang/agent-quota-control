@@ -17,7 +17,8 @@ import { LanguageSettings } from "./components/LanguageSettings";
 import { MonitoringSettings } from "./components/MonitoringSettings";
 import { ProxySettings } from "./components/ProxySettings";
 import { QuotaCard } from "./components/QuotaCard";
-import appMark from "./assets/app-mark.png";
+import appMarkDark from "./assets/app-mark-dark.png";
+import appMarkLight from "./assets/app-mark-light.png";
 import codexIcon from "./assets/codex.png";
 import kimiIcon from "./assets/kimi.png";
 import { useTranslations } from "./i18n";
@@ -152,7 +153,18 @@ export function App() {
     <main className={`app-shell ${windowFocused ? "window-active" : "window-inactive"}`}>
       <aside className="sidebar">
         <div className="brand" data-tauri-drag-region onPointerDown={beginWindowDrag}>
-          <img className="brand-mark" src={appMark} alt="" draggable={false} />
+          <img
+            className="brand-mark brand-mark-light"
+            src={appMarkLight}
+            alt=""
+            draggable={false}
+          />
+          <img
+            className="brand-mark brand-mark-dark"
+            src={appMarkDark}
+            alt=""
+            draggable={false}
+          />
           <div className="brand-copy">
             <h1>{t("app_name")}</h1>
             <p>{t("app_subtitle")}</p>

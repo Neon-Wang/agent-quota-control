@@ -1,8 +1,8 @@
-import { AlertTriangle, CheckCircle2, Clock, Network } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Network } from "lucide-react";
 import { useFormatter, useTranslations } from "../i18n";
 import type { Translator } from "../i18n/translate";
 import { proxyDetailLabel } from "../proxyDisplay";
-import type { CardSnapshot, SufficiencyState } from "../types";
+import type { CardSnapshot, QuotaEstimate, SufficiencyState } from "../types";
 import { UsageTrendChart } from "./UsageTrendChart";
 
 interface QuotaCardProps {
@@ -18,8 +18,10 @@ export function QuotaCard({ card, iconSrc }: QuotaCardProps) {
   const hasData = card.tiers.length > 0;
   const isHealthy = card.status === "fresh" || card.status === "stale";
   const needsLogin = card.status === "login_expired";
-  const statusTone = needsLogin ? "problem" : estimateState;
-  const statusText = needsLogin ? t("needs_login") : displayState;
+  const waitingFirstRefresh = !hasData && !card.errorMessage;
+  const showStatusBadge = !needsLogin && !waitingFirstRefresh;
+  const statusTone = estimateState;
+  const statusText = displayState;
   const weeklyTier = card.tiers.find((tier) =>
     ["weekly_limit", "seven_day"].includes(tier.name),
   );
@@ -36,6 +38,11 @@ export function QuotaCard({ card, iconSrc }: QuotaCardProps) {
   const showAccountName =
     normalizeIdentity(card.accountDisplayName) !==
     normalizeIdentity(card.serviceDisplayName);
+  const showEstimateBlock =
+    hasData &&
+    !!card.weeklyEstimate &&
+    !needsLogin &&
+    !trendCoversEstimate(card.weeklyEstimate);
 
   return (
     <section
@@ -62,24 +69,27 @@ export function QuotaCard({ card, iconSrc }: QuotaCardProps) {
             )}
           </div>
         </div>
-        <div className={`status-badge ${statusTone}`}>
-          {isHealthy ? (
-            <CheckCircle2 size={13} strokeWidth={1.75} aria-hidden />
-          ) : (
-            <AlertTriangle size={13} strokeWidth={1.75} aria-hidden />
-          )}
-          {statusText}
-        </div>
+        {showStatusBadge ? (
+          <div className={`status-badge ${statusTone}`}>
+            {isHealthy ? (
+              <CheckCircle2 size={13} strokeWidth={1.75} aria-hidden />
+            ) : (
+              <AlertTriangle size={13} strokeWidth={1.75} aria-hidden />
+            )}
+            {statusText}
+          </div>
+        ) : null}
       </div>
 
       {card.errorMessage && (
         <div className="card-alert" role="status">
+          <AlertTriangle size={13} strokeWidth={1.75} aria-hidden />
           <span>
             {needsLogin ? t("login_expired") : card.errorMessage}
           </span>
         </div>
       )}
-      {!hasData && !card.errorMessage && (
+      {waitingFirstRefresh && (
         <p className="muted quota-empty">{t("waiting_first_refresh")}</p>
       )}
       {hasData && (
@@ -105,69 +115,63 @@ export function QuotaCard({ card, iconSrc }: QuotaCardProps) {
               </div>
             </div>
           ))}
-          {weeklyTier && !fiveHourTier ? (
-            <div className="tier-unavailable" aria-label={t("no_5h_limit")}>
-              <span>{t("tier_5h")}</span>
-              <strong>{t("no_5h_limit")}</strong>
-            </div>
-          ) : null}
         </div>
       )}
 
-      {hasData && card.weeklyEstimate && (
-        <div className="estimate-box">
-          <div>
-            <span>{t("projected_usage")}</span>
-            <strong>
-              {card.weeklyEstimate.projectedUtilization == null
-                ? t("accumulating")
-                : `${Math.round(card.weeklyEstimate.projectedUtilization)}%`}
-            </strong>
-          </div>
-          {card.weeklyEstimate.exhaustedBeforeResetSecs != null && (
-            <p>
-              {t("exhausted_early", {
-                duration: formatDuration(
-                  card.weeklyEstimate.exhaustedBeforeResetSecs,
-                  t,
-                ),
-              })}
-            </p>
-          )}
-          {card.weeklyEstimate.exhaustedBeforeResetSecs == null &&
-            card.weeklyEstimate.state !== "unknown" && (
-              <p>
-                {estimateHint(
+      {showEstimateBlock && card.weeklyEstimate && (
+        <p className="estimate-note">
+          {card.weeklyEstimate.projectedUtilization == null
+            ? t("accumulating")
+            : card.weeklyEstimate.exhaustedBeforeResetSecs != null
+              ? t("exhausted_early", {
+                  duration: formatDuration(
+                    card.weeklyEstimate.exhaustedBeforeResetSecs,
+                    t,
+                  ),
+                })
+              : estimateHint(
                   card.weeklyEstimate.state,
                   t,
                   card.weeklyEstimate.lastsForSecs,
                 )}
-              </p>
-            )}
-        </div>
+        </p>
       )}
-      {hasData && card.weeklyEstimate && (
+      {hasData && card.weeklyEstimate && !needsLogin && (
         <UsageTrendChart estimate={card.weeklyEstimate} />
       )}
 
       <div className="card-meta">
-        <div className="proxy-line">
+        <div className="proxy-line card-meta-line">
           <Network size={12} strokeWidth={1.75} aria-hidden />
           <span>{proxyDetailLabel(card.proxy, t)}</span>
+          {card.queriedAt ? (
+            <>
+              <span className="meta-sep" aria-hidden>
+                ·
+              </span>
+              <span>
+                {t("updated_at", {
+                  time: format.dateTime(card.queriedAt, { timeStyle: "medium" }),
+                })}
+              </span>
+            </>
+          ) : null}
         </div>
-        {card.queriedAt && (
-          <div className="proxy-line">
-            <Clock size={12} strokeWidth={1.75} aria-hidden />
-            <span>
-              {t("updated_at", {
-                time: format.dateTime(card.queriedAt, { timeStyle: "medium" }),
-              })}
-            </span>
-          </div>
-        )}
       </div>
     </section>
   );
+}
+
+function trendCoversEstimate(estimate: QuotaEstimate): boolean {
+  const windowStart = estimate.windowStartSecs;
+  const windowEnd = estimate.windowEndSecs;
+  const hasDomain =
+    windowStart != null &&
+    windowEnd != null &&
+    Number.isFinite(windowStart) &&
+    Number.isFinite(windowEnd) &&
+    windowEnd > windowStart;
+  return hasDomain;
 }
 
 function meterClass(utilization: number): string {

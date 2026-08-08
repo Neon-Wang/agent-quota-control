@@ -26,8 +26,8 @@
   "dashboard": {
     "quota_aria": "{name} 配额",
     "needs_login": "需要登录",
-    "login_expired": "登录已失效，请重新登录后刷新。",
-    "waiting_first_refresh": "等待后台首次刷新用量。",
+    "login_expired": "登录已失效。重新登录后点上方刷新。",
+    "waiting_first_refresh": "正在获取首次用量…",
     "tier_5h": "5 小时",
     "tier_7d": "7 天",
     "no_5h_limit": "当前无 5 小时限制",

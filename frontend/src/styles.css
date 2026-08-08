@@ -277,6 +277,18 @@ select {
   pointer-events: none;
 }
 
+.brand-mark-dark {
+  display: none;
+}
+
+:root[data-theme="dark"] .brand-mark-light {
+  display: none;
+}
+
+:root[data-theme="dark"] .brand-mark-dark {
+  display: block;
+}
+
 .brand-copy {
   min-width: 0;
   display: grid;
@@ -753,7 +765,6 @@ select {
 .account-settings-header,
 .account-row,
 .account-identity,
-.estimate-box > div,
 .status-badge {
   display: flex;
   align-items: center;
@@ -869,6 +880,7 @@ select {
   max-width: 100%;
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   min-height: 28px;
   margin: 0;
   padding: 5px 10px;
@@ -918,31 +930,6 @@ select {
 
 .tier-row:first-child {
   border-top: 0;
-}
-
-.tier-unavailable {
-  min-height: 57px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 13px 0;
-  border: 0;
-  border-top: 1px solid var(--separator);
-  border-radius: 0;
-  background: transparent;
-  color: var(--muted);
-}
-
-.tier-unavailable span {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.tier-unavailable strong {
-  font-size: 12px;
-  font-weight: 500;
-  text-align: right;
 }
 
 .tier-label {
@@ -1007,26 +994,16 @@ select {
   color: var(--ok-fill);
 }
 
-.estimate-box {
-  display: grid;
-  gap: 6px;
-  padding: 13px 0;
+.estimate-note {
+  margin: 0;
+  padding: 10px 0 0;
   border-top: 1px solid var(--separator);
-  border-radius: 0;
-  background: transparent;
+  color: var(--muted);
   font-size: 12px;
+  line-height: 1.45;
+  font-weight: 400;
 }
 
-.estimate-box div {
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.estimate-box strong {
-  font-variant-numeric: tabular-nums;
-}
-
-.estimate-box p,
 .muted,
 .switch-row small {
   margin: 0;
@@ -1203,8 +1180,6 @@ select {
 }
 
 .card-meta {
-  display: grid;
-  gap: 6px;
   margin-top: auto;
   padding-top: 12px;
   border-top: 1px solid var(--separator);
@@ -1215,6 +1190,15 @@ select {
   margin-top: 0;
   color: var(--muted);
   font-size: 11px;
+}
+
+.card-meta-line {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+.meta-sep {
+  opacity: 0.55;
 }
 
 .quota-empty {
