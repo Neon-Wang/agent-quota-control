@@ -1,0 +1,87 @@
+[app_name]
+en = "Agent Quota Control"
+zh-CN = "Agent 配额控制台"
+
+[app_subtitle]
+en = "Usage & menu bar"
+zh-CN = "用量与状态栏"
+
+[dashboard]
+en = "Overview"
+zh-CN = "概览"
+
+[monitoring]
+en = "Monitoring"
+zh-CN = "监控"
+
+[settings]
+en = "Settings"
+zh-CN = "设置"
+
+[refresh]
+en = "Refresh"
+zh-CN = "刷新"
+
+[loading]
+en = "Loading console"
+zh-CN = "正在加载控制台"
+
+[proxy_status]
+en = "Proxy status"
+zh-CN = "代理状态"
+
+[main_nav]
+en = "Main navigation"
+zh-CN = "主导航"
+
+[kimi]
+en = "Kimi"
+zh-CN = "Kimi"
+
+[kimi_code]
+en = "Kimi Code"
+zh-CN = "Kimi Code"
+
+[codex]
+en = "Codex"
+zh-CN = "Codex"
+
+[cancel]
+en = "Cancel"
+zh-CN = "取消"
+
+[health_no_account]
+en = "No account configured"
+zh-CN = "尚未配置账号"
+
+[health_ok]
+en = "Signed in"
+zh-CN = "登录正常"
+
+[health_partial_login]
+en = "Some accounts need sign-in"
+zh-CN = "部分账号需要登录"
+
+[health_needs_login]
+en = "Sign-in required"
+zh-CN = "需要登录"
+
+[health_partial_unavailable]
+en = "Some accounts unavailable"
+zh-CN = "部分账号暂时不可用"
+
+[health_refresh_failed]
+en = "Refresh failed"
+zh-CN = "刷新失败"
+
+[health_waiting]
+en = "Waiting for data"
+zh-CN = "等待数据"
+
+[empty_accounts_title]
+en = "No monitored accounts yet"
+zh-CN = "还没有监控账号"
+
+[empty_accounts_body]
+en = "Add a Kimi or Codex account in Monitoring."
+zh-CN = "在“监控”中添加 Kimi 或 Codex 账号。"

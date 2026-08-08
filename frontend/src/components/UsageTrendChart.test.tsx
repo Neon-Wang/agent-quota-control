@@ -1,5 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { renderWithI18n as render } from "../test/render";
 import type { QuotaEstimate } from "../types";
 import { UsageTrendChart } from "./UsageTrendChart";
 
@@ -30,24 +31,54 @@ function trendEstimate(overrides: Partial<QuotaEstimate> = {}): QuotaEstimate {
 }
 
 describe("UsageTrendChart", () => {
-  it("renders actual and projected lines with an accessible recent-pace summary", () => {
+  it("renders a forecast-first report without web-style tags", () => {
     render(<UsageTrendChart estimate={trendEstimate()} nowSecs={NOW} />);
 
     expect(
       screen.getByRole("img", { name: /实际用量.*近期趋势预测/ }),
     ).toBeInTheDocument();
-    expect(screen.getByText("实际用量")).toBeInTheDocument();
-    expect(screen.getByText("近期趋势预测")).toBeInTheDocument();
-    expect(screen.getByText(/每小时增加 1.4%/)).toBeInTheDocument();
-    expect(screen.getByText(/预计 18 小时后耗尽，比重置早 9 小时/)).toBeInTheDocument();
-    expect(screen.getByTestId("observed-usage-line")).toHaveAttribute("points");
-    expect(screen.getByTestId("projected-usage-line")).toHaveAttribute("points");
+    expect(screen.getByText("预计 18 小时后用完")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "根据最近 24 小时的变化，用量大约每小时增加 1.4%。",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/提前/)).not.toBeInTheDocument();
+    expect(document.querySelector(".trend-outcome")).toBeNull();
+    expect(document.querySelector(".trend-exhaustion-point")).not.toBeNull();
+    expect(
+      screen.getByTestId("observed-usage-line").getAttribute("stroke"),
+    ).toMatch(/^url\(#trend-stroke-/);
   });
 
-  it("labels a confirmed short-window forecast as a stable trend", () => {
+  it("keeps past-tense copy only when exhaustion already happened", () => {
     render(
       <UsageTrendChart
         estimate={trendEstimate({
+          exhaustedAtSecs: NOW - 3_600,
+          exhaustedBeforeResetSecs: 86_400,
+          lastsForSecs: 200_000,
+          projectedPoints: [
+            { observedAtSecs: NOW - 10_000, utilization: 100 },
+            { observedAtSecs: NOW, utilization: 100 },
+          ],
+        })}
+        nowSecs={NOW}
+      />,
+    );
+
+    expect(screen.getByText("本周期已在重置前用完")).toBeInTheDocument();
+    expect(screen.getByText("比本次重置大约提前了 1 天。")).toBeInTheDocument();
+    expect(screen.queryByText(/预计 .*后用完/)).not.toBeInTheDocument();
+  });
+
+  it("labels a healthy forecast with projected reset usage", () => {
+    render(
+      <UsageTrendChart
+        estimate={trendEstimate({
+          state: "enough",
+          projectedUtilization: 62,
+          lastsForSecs: 200_000,
           slopePctPerHour: 12,
           trendWindowHours: 24,
           observedSpanSecs: 1_200,
@@ -58,13 +89,21 @@ describe("UsageTrendChart", () => {
             { observedAtSecs: NOW - 300, utilization: 49 },
             { observedAtSecs: NOW, utilization: 50 },
           ],
+          projectedPoints: [
+            { observedAtSecs: NOW, utilization: 50 },
+            { observedAtSecs: NOW + 86_400, utilization: 62 },
+          ],
         })}
         nowSecs={NOW}
       />,
     );
 
-    expect(screen.getByText(/最近 20 分钟稳定趋势/)).toBeInTheDocument();
-    expect(screen.getByText(/每小时增加 12%/)).toBeInTheDocument();
+    expect(screen.getByText("预计重置时约 62%")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "根据最近 20 分钟的变化，用量大约每小时增加 12%。",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("shows observed history without inventing a projection while samples accumulate", () => {
@@ -87,7 +126,7 @@ describe("UsageTrendChart", () => {
     expect(screen.queryByTestId("projected-usage-line")).not.toBeInTheDocument();
   });
 
-  it("keeps the current label clear of the 100% axis at the start of a cycle", () => {
+  it("keeps quiet chrome without a now label or red 100% limit line", () => {
     render(
       <UsageTrendChart
         estimate={trendEstimate({
@@ -106,17 +145,11 @@ describe("UsageTrendChart", () => {
       />,
     );
 
-    const currentLabel = screen.getByText("现在");
-    const limitLabel = screen.getByText("100%");
-    const limitLine = document.querySelector(".trend-limit-line");
-
-    expect(limitLine).not.toBeNull();
-    expect(Number(currentLabel.getAttribute("y"))).toBeLessThan(
-      Number(limitLine?.getAttribute("y1")),
-    );
-    expect(
-      Number(currentLabel.getAttribute("x")) - Number(limitLabel.getAttribute("x")),
-    ).toBeGreaterThanOrEqual(20);
+    expect(screen.queryByText("现在")).not.toBeInTheDocument();
+    expect(document.querySelector(".trend-limit-line")).toBeNull();
+    expect(screen.getByText("100%")).toBeInTheDocument();
+    expect(screen.queryByText("50%")).not.toBeInTheDocument();
+    expect(document.querySelector(".trend-now-line")).not.toBeNull();
   });
 
   it("uses a compact pending state instead of an empty chart for a single sample", () => {
@@ -140,6 +173,5 @@ describe("UsageTrendChart", () => {
       screen.getByText(/短期预测至少需要 5 个样本并稳定覆盖 20 分钟/),
     ).toBeInTheDocument();
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
-    expect(screen.queryByText("实际用量")).not.toBeInTheDocument();
   });
 });

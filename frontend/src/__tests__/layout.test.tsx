@@ -13,13 +13,12 @@ describe("dashboard card layout", () => {
     expect(quotaCardRule).not.toMatch(/(?:^|\n)\s*height:\s*100%;/);
   });
 
-  it("keeps an unavailable quota tier aligned with a populated tier", () => {
+  it("keeps populated quota tiers at a consistent row height", () => {
     const styles = readFileSync(resolve("src/styles.css"), "utf8");
     const tierRowRule = styles.match(/\.tier-row\s*\{([^}]*)\}/)?.[1];
-    const unavailableRule = styles.match(/\.tier-unavailable\s*\{([^}]*)\}/)?.[1];
 
     expect(tierRowRule).toMatch(/min-height:\s*57px;/);
-    expect(unavailableRule).toMatch(/min-height:\s*57px;/);
+    expect(styles).not.toMatch(/\.tier-unavailable\s*\{/);
   });
 
   it("keeps the content grid item constrained so the inner view can scroll", () => {
@@ -74,6 +73,13 @@ describe("dashboard card layout", () => {
     expect(controlsRule).toMatch(/margin-left:\s*-10px;/);
     expect(titleRule).toMatch(/min-height:\s*42px;/);
     expect(titleRule).toMatch(/align-items:\s*center;/);
+  });
+
+  it("removes the dark sidebar border when the window is inactive", () => {
+    const styles = readFileSync(resolve("src/styles.css"), "utf8");
+    expect(styles).toMatch(
+      /:root\[data-theme="dark"\] \.window-inactive \.sidebar[\s\S]*?border-color:\s*transparent;/,
+    );
   });
 
   it("styles settings controls for press feedback, contrast, and inactive primary", () => {

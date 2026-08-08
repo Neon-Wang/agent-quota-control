@@ -1,7 +1,8 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
+import { renderWithI18n as render } from "../test/render";
 import type { DashboardState } from "../types";
 
 const invokeMock = vi.fn();
@@ -258,16 +259,15 @@ describe("App", () => {
     expect(within(kimiCard).getByRole("heading", { name: "Kimi 工作账号" })).toBeInTheDocument();
     expect(within(kimiCard).getByText("Kimi Code")).toBeInTheDocument();
     expect(within(codexCard).getByRole("heading", { name: "Codex 个人账号" })).toBeInTheDocument();
-    expect(within(codexCard).getByText("当前无 5 小时限制")).toBeInTheDocument();
+    expect(within(codexCard).queryByText("当前无 5 小时限制")).not.toBeInTheDocument();
 
-    const kimiTierSlots = kimiCard.querySelectorAll(".tier-row, .tier-unavailable");
-    const codexTierSlots = codexCard.querySelectorAll(".tier-row, .tier-unavailable");
+    const kimiTierSlots = kimiCard.querySelectorAll(".tier-row");
+    const codexTierSlots = codexCard.querySelectorAll(".tier-row");
     expect(kimiTierSlots).toHaveLength(2);
-    expect(codexTierSlots).toHaveLength(2);
+    expect(codexTierSlots).toHaveLength(1);
     expect(kimiTierSlots[0]).toHaveTextContent("7 天");
     expect(kimiTierSlots[1]).toHaveTextContent("5 小时");
     expect(codexTierSlots[0]).toHaveTextContent("7 天");
-    expect(codexTierSlots[1]).toHaveTextContent("当前无 5 小时限制");
 
     expect(screen.getByText("（2 小时 15 分钟后重置）")).toBeInTheDocument();
     expect(screen.getByText(/06月07日 .* 重置/)).toBeInTheDocument();
@@ -276,12 +276,19 @@ describe("App", () => {
     expect(within(proxyStatus).getByText("Codex")).toBeInTheDocument();
     expect(within(proxyStatus).getByLabelText("Kimi：登录正常")).toBeInTheDocument();
     expect(within(proxyStatus).getByLabelText("Codex：登录正常")).toBeInTheDocument();
-    expect(screen.getByText("本周内预计够用。")).toBeInTheDocument();
-    expect(screen.getByText("预计将在 1 天 2 小时 后耗尽。")).toBeInTheDocument();
+    expect(within(kimiCard).queryByText("本周内预计够用。")).not.toBeInTheDocument();
+    expect(within(codexCard).getByText("预计将在 1 天 2 小时 后耗尽。")).toBeInTheDocument();
     expect(
       screen.getByRole("img", { name: /实际用量.*近期趋势预测/ }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/近 24 小时趋势：每小时增加 0.4%/)).toBeInTheDocument();
+    expect(within(kimiCard).getByText("预计重置时约 72%")).toBeInTheDocument();
+    expect(
+      within(kimiCard).getByText(
+        "根据最近 24 小时的变化，用量大约每小时增加 0.4%。",
+      ),
+    ).toBeInTheDocument();
+    expect(within(kimiCard).getByText(/更新于/)).toBeInTheDocument();
+    expect(kimiCard.querySelectorAll(".proxy-line")).toHaveLength(1);
     expect(screen.queryByText("direct")).not.toBeInTheDocument();
     expect(screen.queryByText("unavailable")).not.toBeInTheDocument();
   });
@@ -305,8 +312,12 @@ describe("App", () => {
     expect(await screen.findByLabelText("Kimi：需要登录")).toBeInTheDocument();
     expect(screen.getByLabelText("Codex：需要登录")).toBeInTheDocument();
     const kimiCard = screen.getByRole("region", { name: "Kimi 工作账号 配额" });
+    expect(within(kimiCard).queryByText("需要登录")).not.toBeInTheDocument();
+    expect(kimiCard.querySelectorAll(".status-badge")).toHaveLength(0);
     expect(kimiCard.querySelectorAll(".lucide-triangle-alert")).toHaveLength(1);
-    expect(within(kimiCard).getByText("登录已失效，请重新登录后刷新。")).toBeInTheDocument();
+    expect(
+      within(kimiCard).getByText("登录已失效。重新登录后点上方刷新。"),
+    ).toBeInTheDocument();
   });
 
   it("does not expose the retired generic tools page", async () => {
@@ -428,6 +439,7 @@ describe("App", () => {
   it("lets appearance switch between light, dark, and system", async () => {
     const user = userEvent.setup();
     localStorage.clear();
+    localStorage.setItem("agent-quota-control.locale", "zh-CN");
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "设置" }));
@@ -448,6 +460,19 @@ describe("App", () => {
     fireEvent.click(dark);
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(dark).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("switches interface language from settings", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "设置" }));
+    const language = screen.getByLabelText("语言");
+    await user.selectOptions(language, "en");
+
+    expect(await screen.findByRole("button", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Agent Quota Control" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Language")).toHaveValue("en");
   });
 
   it("lets a monitored service be hidden from the menu bar independently", async () => {

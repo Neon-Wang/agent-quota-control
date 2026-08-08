@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 3000",
-    "build": "vite build",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "i18n:generate": "node ./scripts/i18n-generate.mjs",
+    "dev": "pnpm run i18n:generate && vite --host 127.0.0.1 --port 3000",
+    "build": "pnpm run i18n:generate && vite build",
+    "typecheck": "pnpm run i18n:generate && tsc --noEmit",
+    "test": "pnpm run i18n:generate && vitest run"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",
@@ -23,6 +24,7 @@
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.2.0",
     "jsdom": "^25.0.0",
+    "smol-toml": "^1.7.1",
     "typescript": "^5.3.0",
     "vite": "^7.3.0",
     "vitest": "^2.0.5"

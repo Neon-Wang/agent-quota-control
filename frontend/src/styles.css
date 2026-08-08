@@ -35,9 +35,7 @@
   --primary-button-text: var(--accent-contrast);
   --chip-bg: rgba(0, 0, 0, 0.06);
   --focus-ring: rgba(0, 122, 255, 0.4);
-  --trend-observed: #1f8a5b;
-  --trend-projected: #c47a10;
-  --trend-grid: rgba(0, 0, 0, 0.08);
+  --trend-grid: rgba(0, 0, 0, 0.06);
   --scrollbar-thumb: rgba(0, 0, 0, 0.28);
   --scrollbar-thumb-active: rgba(0, 0, 0, 0.4);
   --glass-bg: rgba(255, 255, 255, 0.72);
@@ -105,9 +103,7 @@
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 0 0 0.5px rgba(255, 255, 255, 0.04);
   --chip-bg: rgba(120, 120, 128, 0.28);
   --focus-ring: rgba(10, 132, 255, 0.55);
-  --trend-observed: #30d158;
-  --trend-projected: #ffd60a;
-  --trend-grid: rgba(84, 84, 88, 0.55);
+  --trend-grid: rgba(84, 84, 88, 0.28);
   --scrollbar-thumb: #9b9b9b;
   --scrollbar-thumb-active: #b0b0b0;
   --glass-bg: rgba(40, 40, 40, 0.42);
@@ -236,7 +232,9 @@ select {
     0 8px 28px rgba(0, 0, 0, 0.05);
 }
 
-.window-inactive .sidebar {
+.window-inactive .sidebar,
+:root[data-theme="dark"] .window-inactive .sidebar,
+:root[data-theme="light"] .window-inactive .sidebar {
   background: color-mix(in srgb, var(--sidebar-solid) 78%, transparent);
   border-color: transparent;
   box-shadow: none;
@@ -244,9 +242,6 @@ select {
 
 :root[data-theme="light"] .window-inactive .sidebar {
   overflow: hidden;
-  background: color-mix(in srgb, var(--sidebar-solid) 78%, transparent);
-  border-color: transparent;
-  box-shadow: none;
 }
 
 .window-inactive .nav-item.active {
@@ -262,10 +257,38 @@ select {
 .brand {
   display: flex;
   align-items: center;
-  min-height: 58px;
-  margin: 0 0 4px;
-  padding: 0 8px 0 78px;
+  gap: 10px;
+  min-height: 0;
+  margin: 0 0 10px;
+  padding: 48px 8px 6px;
   user-select: none;
+}
+
+.brand-mark {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 50%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.brand-mark-dark {
+  display: none;
+}
+
+:root[data-theme="dark"] .brand-mark-light {
+  display: none;
+}
+
+:root[data-theme="dark"] .brand-mark-dark {
+  display: block;
+}
+
+.brand-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
 }
 
 .brand h1,
@@ -285,6 +308,7 @@ select {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.01em;
+  line-height: 1.2;
 }
 
 .brand p,
@@ -292,6 +316,7 @@ select {
   color: var(--muted);
   font-size: 11px;
   font-weight: 500;
+  line-height: 1.25;
 }
 
 .sidebar nav {
@@ -736,7 +761,6 @@ select {
 .account-settings-header,
 .account-row,
 .account-identity,
-.estimate-box > div,
 .status-badge {
   display: flex;
   align-items: center;
@@ -771,11 +795,23 @@ select {
   align-items: flex-start;
 }
 
+.service-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  align-content: center;
+}
+
+.service-copy-single {
+  align-content: center;
+}
+
 .service-heading .eyebrow {
-  margin-bottom: 2px;
+  margin: 0;
 }
 
 .service-heading h3 {
+  margin: 0;
   font-size: 17px;
   font-weight: 650;
   letter-spacing: -0.02em;
@@ -840,6 +876,7 @@ select {
   max-width: 100%;
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   min-height: 28px;
   margin: 0;
   padding: 5px 10px;
@@ -891,31 +928,6 @@ select {
   border-top: 0;
 }
 
-.tier-unavailable {
-  min-height: 57px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 13px 0;
-  border: 0;
-  border-top: 1px solid var(--separator);
-  border-radius: 0;
-  background: transparent;
-  color: var(--muted);
-}
-
-.tier-unavailable span {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.tier-unavailable strong {
-  font-size: 12px;
-  font-weight: 500;
-  text-align: right;
-}
-
 .tier-label {
   display: flex;
   min-width: 0;
@@ -943,6 +955,18 @@ select {
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
+}
+
+.usage-tone-ok {
+  color: var(--ok-fill);
+}
+
+.usage-tone-warn {
+  color: var(--warn-fill);
+}
+
+.usage-tone-danger {
+  color: var(--danger);
 }
 
 .meter {
@@ -978,26 +1002,16 @@ select {
   color: var(--ok-fill);
 }
 
-.estimate-box {
-  display: grid;
-  gap: 6px;
-  padding: 13px 0;
+.estimate-note {
+  margin: 0;
+  padding: 10px 0 0;
   border-top: 1px solid var(--separator);
-  border-radius: 0;
-  background: transparent;
+  color: var(--muted);
   font-size: 12px;
+  line-height: 1.45;
+  font-weight: 400;
 }
 
-.estimate-box div {
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.estimate-box strong {
-  font-variant-numeric: tabular-nums;
-}
-
-.estimate-box p,
 .muted,
 .switch-row small {
   margin: 0;
@@ -1009,7 +1023,8 @@ select {
 
 .usage-trend {
   display: grid;
-  gap: 8px;
+  gap: 6px;
+  padding-top: 4px;
 }
 
 .trend-pending {
@@ -1026,32 +1041,15 @@ select {
 
 .trend-pending-mark {
   position: relative;
+  display: grid;
+  place-items: center;
   width: 30px;
   height: 30px;
   flex: 0 0 auto;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background:
-    linear-gradient(
-        135deg,
-        transparent 45%,
-        var(--ok-fill) 46% 52%,
-        transparent 53%
-      )
-      center / 18px 14px no-repeat,
-    var(--surface);
-}
-
-.trend-pending-mark::after {
-  content: "";
-  position: absolute;
-  right: 6px;
-  top: 7px;
-  width: 5px;
-  height: 5px;
-  border: 2px solid var(--ok-fill);
-  border-radius: 50%;
   background: var(--surface);
+  color: var(--ok-fill);
 }
 
 .trend-pending strong {
@@ -1066,31 +1064,6 @@ select {
   line-height: 1.45;
 }
 
-.trend-legend {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.trend-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.legend-line {
-  display: inline-block;
-  width: 18px;
-  border-top: 2px solid var(--trend-observed);
-}
-
-.legend-line.projected {
-  border-color: var(--trend-projected);
-  border-top-style: dashed;
-}
-
 .usage-trend-figure {
   margin: 0;
 }
@@ -1103,7 +1076,6 @@ select {
 }
 
 .trend-grid-line,
-.trend-limit-line,
 .trend-now-line {
   vector-effect: non-scaling-stroke;
 }
@@ -1113,17 +1085,10 @@ select {
   stroke-width: 1;
 }
 
-.trend-limit-line {
-  stroke: var(--danger);
-  stroke-width: 1;
-  stroke-dasharray: 3 3;
-  opacity: 0.65;
-}
-
 .trend-now-line {
   stroke: var(--muted-2);
   stroke-width: 1;
-  stroke-dasharray: 2 3;
+  opacity: 0.55;
 }
 
 .trend-observed-line,
@@ -1135,33 +1100,35 @@ select {
 }
 
 .trend-observed-line {
-  stroke: var(--trend-observed);
-  stroke-width: 2.1;
+  stroke-width: 2.35;
 }
 
 .trend-projected-line {
-  stroke: var(--trend-projected);
-  stroke-width: 1.9;
-  stroke-dasharray: 5 4;
+  stroke-width: 1.35;
+  stroke-dasharray: 0.1 6;
+  stroke-linecap: round;
+  opacity: 0.5;
+}
+
+.trend-observed-halo {
+  opacity: 0.16;
 }
 
 .trend-observed-point {
-  fill: var(--surface);
-  stroke: var(--trend-observed);
-  stroke-width: 2;
+  stroke: var(--surface);
+  stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
 }
 
 .trend-exhaustion-point {
-  fill: var(--surface);
-  stroke: var(--danger);
-  stroke-width: 2;
+  fill: var(--danger);
+  stroke: var(--surface);
+  stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
 }
 
 .trend-axis-label,
-.trend-date-label,
-.trend-now-label {
+.trend-date-label {
   fill: var(--muted-2);
   font-family: inherit;
   font-size: 9px;
@@ -1175,24 +1142,30 @@ select {
   text-anchor: end;
 }
 
-.trend-now-label {
-  text-anchor: middle;
-  paint-order: stroke;
-  stroke: var(--surface);
-  stroke-width: 3px;
-  stroke-linejoin: round;
+.trend-report {
+  display: grid;
+  gap: 2px;
+  padding-top: 2px;
 }
 
-.trend-summary {
+.trend-report-primary {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+
+.trend-report-detail {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .card-meta {
-  display: grid;
-  gap: 6px;
   margin-top: auto;
   padding-top: 12px;
   border-top: 1px solid var(--separator);
@@ -1203,6 +1176,15 @@ select {
   margin-top: 0;
   color: var(--muted);
   font-size: 11px;
+}
+
+.card-meta-line {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+.meta-sep {
+  opacity: 0.55;
 }
 
 .quota-empty {
@@ -1447,13 +1429,67 @@ select {
   box-shadow: none;
 }
 
-.appearance-segmented {
-  max-width: 360px;
+.panel-description {
+  margin-bottom: 12px;
+}
+
+.panel > .segmented {
   margin-bottom: 0;
 }
 
-.panel-description {
-  margin-bottom: 12px;
+.panel-title + .segmented {
+  margin-top: 8px;
+}
+
+.macos-popup {
+  position: relative;
+  margin-top: 8px;
+}
+
+.macos-popup select {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  min-height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text);
+  padding: 0 28px 0 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 28px;
+  box-shadow: none;
+  cursor: default;
+}
+
+.macos-popup select:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.macos-popup select:active {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.macos-popup-chevron {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+:root[data-theme="dark"] .macos-popup select {
+  background: #1a1919;
+  color: #f5f5f7;
+  box-shadow: none;
+}
+
+:root[data-theme="dark"] .macos-popup select:active {
+  background: #242323;
 }
 
 .proxy-editor {
@@ -1478,6 +1514,54 @@ select {
 
 .proxy-editor .subhead + .segmented {
   margin-top: -2px;
+}
+
+.proxy-url-field {
+  display: grid;
+  gap: 6px;
+}
+
+.proxy-url-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.proxy-url-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.proxy-url-row input {
+  flex: 1 1 180px;
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: #ffffff;
+  color: var(--text);
+  padding: 0 10px;
+  font: inherit;
+}
+
+.proxy-url-row input:focus {
+  border-color: var(--accent);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+  outline: none;
+}
+
+:root[data-theme="dark"] .proxy-url-row input {
+  border-color: var(--border-strong);
+  background: var(--surface-secondary);
+  box-shadow: none;
+}
+
+.proxy-url-row .compact {
+  flex: 0 0 auto;
+  min-height: 32px;
 }
 
 .button-row {
@@ -1572,6 +1656,10 @@ select {
   display: grid;
   gap: 2px;
   min-width: 0;
+}
+
+.account-name-stack-single {
+  align-content: center;
 }
 
 .account-name-slot {

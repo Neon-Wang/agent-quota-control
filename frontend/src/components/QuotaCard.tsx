@@ -1,9 +1,9 @@
-import { AlertTriangle, CheckCircle2, Clock, Network } from "lucide-react";
-import type {
-  CardSnapshot,
-  SufficiencyState,
-} from "../types";
+import { AlertTriangle, CheckCircle2, Network } from "lucide-react";
+import { useFormatter, useTranslations } from "../i18n";
+import type { Translator } from "../i18n/translate";
 import { proxyDetailLabel } from "../proxyDisplay";
+import type { CardSnapshot, QuotaEstimate, SufficiencyState } from "../types";
+import { meterFillClass, usageToneClass } from "../usageColor";
 import { UsageTrendChart } from "./UsageTrendChart";
 
 interface QuotaCardProps {
@@ -11,20 +11,18 @@ interface QuotaCardProps {
   iconSrc: string;
 }
 
-const tierLabels: Record<string, string> = {
-  five_hour: "5 小时",
-  weekly_limit: "7 天",
-  seven_day: "7 天",
-};
-
 export function QuotaCard({ card, iconSrc }: QuotaCardProps) {
+  const t = useTranslations("dashboard");
+  const format = useFormatter();
   const estimateState = card.weeklyEstimate?.state ?? "unknown";
-  const displayState = stateLabel(estimateState);
+  const displayState = stateLabel(estimateState, t);
   const hasData = card.tiers.length > 0;
   const isHealthy = card.status === "fresh" || card.status === "stale";
   const needsLogin = card.status === "login_expired";
-  const statusTone = needsLogin ? "problem" : estimateState;
-  const statusText = needsLogin ? "需要登录" : displayState;
+  const waitingFirstRefresh = !hasData && !card.errorMessage;
+  const showStatusBadge = !needsLogin && !waitingFirstRefresh;
+  const statusTone = estimateState;
+  const statusText = displayState;
   const weeklyTier = card.tiers.find((tier) =>
     ["weekly_limit", "seven_day"].includes(tier.name),
   );
@@ -41,175 +39,217 @@ export function QuotaCard({ card, iconSrc }: QuotaCardProps) {
   const showAccountName =
     normalizeIdentity(card.accountDisplayName) !==
     normalizeIdentity(card.serviceDisplayName);
+  const showEstimateBlock =
+    hasData &&
+    !!card.weeklyEstimate &&
+    !needsLogin &&
+    !trendCoversEstimate(card.weeklyEstimate);
 
   return (
     <section
       className="quota-card"
-      aria-label={`${card.accountDisplayName} 配额`}
+      aria-label={t("quota_aria", { name: card.accountDisplayName })}
     >
       <div className="quota-header">
         <div className="service-heading">
           <img src={iconSrc} alt="" aria-hidden />
-          <div>
-            <p className="eyebrow">{card.serviceDisplayName}</p>
-            <h3>
-              {showAccountName ? card.accountDisplayName : card.serviceDisplayName}
-            </h3>
+          <div
+            className={
+              showAccountName
+                ? "service-copy"
+                : "service-copy service-copy-single"
+            }
+          >
+            {showAccountName ? (
+              <>
+                <p className="eyebrow">{card.serviceDisplayName}</p>
+                <h3>{card.accountDisplayName}</h3>
+              </>
+            ) : (
+              <h3>{card.serviceDisplayName}</h3>
+            )}
           </div>
         </div>
-        <div className={`status-badge ${statusTone}`}>
-          {isHealthy ? (
-            <CheckCircle2 size={13} strokeWidth={1.75} aria-hidden />
-          ) : (
-            <AlertTriangle size={13} strokeWidth={1.75} aria-hidden />
-          )}
-          {statusText}
-        </div>
+        {showStatusBadge ? (
+          <div className={`status-badge ${statusTone}`}>
+            {isHealthy ? (
+              <CheckCircle2 size={13} strokeWidth={1.75} aria-hidden />
+            ) : (
+              <AlertTriangle size={13} strokeWidth={1.75} aria-hidden />
+            )}
+            {statusText}
+          </div>
+        ) : null}
       </div>
 
       {card.errorMessage && (
         <div className="card-alert" role="status">
+          <AlertTriangle size={13} strokeWidth={1.75} aria-hidden />
           <span>
-            {needsLogin
-              ? "登录已失效，请重新登录后刷新。"
-              : card.errorMessage}
+            {needsLogin ? t("login_expired") : card.errorMessage}
           </span>
         </div>
       )}
-      {!hasData && !card.errorMessage && <p className="muted quota-empty">等待后台首次刷新用量。</p>}
+      {waitingFirstRefresh && (
+        <p className="muted quota-empty">{t("waiting_first_refresh")}</p>
+      )}
       {hasData && (
         <div className="tier-stack">
           {orderedTiers.map((tier) => (
             <div className="tier-row" key={tier.name}>
               <div className="tier-meta">
                 <span className="tier-label">
-                  <span>{tierLabels[tier.name] ?? tier.name}</span>
+                  <span>{tierLabel(tier.name, t)}</span>
                   {tier.resetsAt && (
-                    <small>（{formatResetLabel(tier.name, tier.resetsAt)}）</small>
+                    <small>
+                      （{formatResetLabel(tier.name, tier.resetsAt, t)}）
+                    </small>
                   )}
                 </span>
-                <strong>{Math.round(tier.utilization)}%</strong>
+                <strong className={usageToneClass(tier.utilization)}>
+                  {Math.round(tier.utilization)}%
+                </strong>
               </div>
               <div className="meter" aria-label={`${tier.name} utilization`}>
                 <div
-                  className={meterClass(tier.utilization)}
+                  className={meterFillClass(tier.utilization)}
                   style={{ width: `${Math.min(tier.utilization, 100)}%` }}
                 />
               </div>
             </div>
           ))}
-          {weeklyTier && !fiveHourTier ? (
-            <div className="tier-unavailable" aria-label="当前无 5 小时限制">
-              <span>5 小时</span>
-              <strong>当前无 5 小时限制</strong>
-            </div>
-          ) : null}
         </div>
       )}
 
-      {hasData && card.weeklyEstimate && (
-        <div className="estimate-box">
-          <div>
-            <span>预计用量</span>
-            <strong>
-              {card.weeklyEstimate.projectedUtilization == null
-                ? "积累中"
-                : `${Math.round(card.weeklyEstimate.projectedUtilization)}%`}
-            </strong>
-          </div>
-          {card.weeklyEstimate.exhaustedBeforeResetSecs != null && (
-            <p>
-              已提前 {formatDuration(card.weeklyEstimate.exhaustedBeforeResetSecs)} 耗尽。
-            </p>
-          )}
-          {card.weeklyEstimate.exhaustedBeforeResetSecs == null &&
-            card.weeklyEstimate.state !== "unknown" && (
-            <p>{estimateHint(card.weeklyEstimate.state, card.weeklyEstimate.lastsForSecs)}</p>
-          )}
-        </div>
+      {showEstimateBlock && card.weeklyEstimate && (
+        <p className="estimate-note">
+          {card.weeklyEstimate.projectedUtilization == null
+            ? t("accumulating")
+            : card.weeklyEstimate.exhaustedBeforeResetSecs != null
+              ? t("exhausted_early", {
+                  duration: formatDuration(
+                    card.weeklyEstimate.exhaustedBeforeResetSecs,
+                    t,
+                  ),
+                })
+              : estimateHint(
+                  card.weeklyEstimate.state,
+                  t,
+                  card.weeklyEstimate.lastsForSecs,
+                )}
+        </p>
       )}
-      {hasData && card.weeklyEstimate && (
+      {hasData && card.weeklyEstimate && !needsLogin && (
         <UsageTrendChart estimate={card.weeklyEstimate} />
       )}
 
       <div className="card-meta">
-        <div className="proxy-line">
+        <div className="proxy-line card-meta-line">
           <Network size={12} strokeWidth={1.75} aria-hidden />
-          <span>{proxyDetailLabel(card.proxy)}</span>
+          <span>{proxyDetailLabel(card.proxy, t)}</span>
+          {card.queriedAt ? (
+            <>
+              <span className="meta-sep" aria-hidden>
+                ·
+              </span>
+              <span>
+                {t("updated_at", {
+                  time: format.dateTime(card.queriedAt, { timeStyle: "medium" }),
+                })}
+              </span>
+            </>
+          ) : null}
         </div>
-        {card.queriedAt && (
-          <div className="proxy-line">
-            <Clock size={12} strokeWidth={1.75} aria-hidden />
-            <span>更新于 {new Date(card.queriedAt).toLocaleTimeString()}</span>
-          </div>
-        )}
       </div>
     </section>
   );
 }
 
-function meterClass(utilization: number): string {
-  if (utilization >= 90) return "meter-fill danger";
-  if (utilization >= 70) return "meter-fill warn";
-  return "meter-fill ok-fill";
+function trendCoversEstimate(estimate: QuotaEstimate): boolean {
+  const windowStart = estimate.windowStartSecs;
+  const windowEnd = estimate.windowEndSecs;
+  const hasDomain =
+    windowStart != null &&
+    windowEnd != null &&
+    Number.isFinite(windowStart) &&
+    Number.isFinite(windowEnd) &&
+    windowEnd > windowStart;
+  return hasDomain;
 }
 
-function stateLabel(state: SufficiencyState): string {
-  if (state === "enough") return "够用";
-  if (state === "tight") return "偏紧";
-  if (state === "not_enough") return "不够";
-  return "等待数据";
+function tierLabel(name: string, t: Translator<"dashboard">): string {
+  if (name === "five_hour") return t("tier_5h");
+  if (name === "weekly_limit" || name === "seven_day") return t("tier_7d");
+  return name;
+}
+
+function stateLabel(state: SufficiencyState, t: Translator<"dashboard">): string {
+  if (state === "enough") return t("state_enough");
+  if (state === "tight") return t("state_tight");
+  if (state === "not_enough") return t("state_not_enough");
+  return t("state_waiting");
 }
 
 function normalizeIdentity(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
 
-function estimateHint(state: SufficiencyState, lastsForSecs?: number | null): string {
+function estimateHint(
+  state: SufficiencyState,
+  t: Translator<"dashboard">,
+  lastsForSecs?: number | null,
+): string {
   if (state === "not_enough" && lastsForSecs != null) {
-    return `预计将在 ${formatDuration(lastsForSecs)} 后耗尽。`;
+    return t("hint_exhaust_in", { duration: formatDuration(lastsForSecs, t) });
   }
-  if (state === "tight") {
-    return "本周内预计不会耗尽，但余量偏紧。";
-  }
-  if (state === "enough") {
-    return "本周内预计够用。";
-  }
-  return "等待更多用量数据后估算。";
+  if (state === "tight") return t("hint_tight");
+  if (state === "enough") return t("hint_enough");
+  return t("hint_waiting");
 }
 
-function formatDuration(seconds: number): string {
+function formatDuration(seconds: number, t: Translator<"dashboard">): string {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
-  if (days > 0 && hours > 0) return `${days} 天 ${hours} 小时`;
-  if (days > 0) return `${days} 天`;
-  return `${hours} 小时`;
+  if (days > 0 && hours > 0) {
+    return t("duration_days_hours", { days, hours });
+  }
+  if (days > 0) return t("duration_days", { days });
+  return t("duration_hours", { hours });
 }
 
-function formatResetTime(value: string): string {
+function formatResetTime(value: string, t: Translator<"dashboard">): string {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "未知时间";
+  if (Number.isNaN(date.getTime())) return t("unknown_time");
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
   const day = `${date.getDate()}`.padStart(2, "0");
   const hour = `${date.getHours()}`.padStart(2, "0");
   const minute = `${date.getMinutes()}`.padStart(2, "0");
-  return `${month}月${day}日 ${hour}:${minute}`;
+  return t("reset_datetime", { month, day, hour, minute });
 }
 
-function formatResetLabel(tierName: string, value: string): string {
+function formatResetLabel(
+  tierName: string,
+  value: string,
+  t: Translator<"dashboard">,
+): string {
   if (tierName === "five_hour") {
-    return `${formatResetCountdown(value)}后重置`;
+    return t("reset_in", { duration: formatResetCountdown(value, t) });
   }
-  return `${formatResetTime(value)} 重置`;
+  return t("reset_at", { time: formatResetTime(value, t) });
 }
 
-function formatResetCountdown(value: string): string {
+function formatResetCountdown(
+  value: string,
+  t: Translator<"dashboard">,
+): string {
   const resetAt = new Date(value).getTime();
-  if (Number.isNaN(resetAt)) return "未知时间";
+  if (Number.isNaN(resetAt)) return t("unknown_time");
   const seconds = Math.max(0, Math.ceil((resetAt - Date.now()) / 1000));
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.ceil((seconds % 3600) / 60);
-  if (hours > 0 && minutes > 0) return `${hours} 小时 ${minutes} 分钟`;
-  if (hours > 0) return `${hours} 小时`;
-  return `${minutes} 分钟`;
+  if (hours > 0 && minutes > 0) {
+    return t("duration_hours_minutes", { hours, minutes });
+  }
+  if (hours > 0) return t("duration_hours", { hours });
+  return t("duration_minutes", { minutes });
 }

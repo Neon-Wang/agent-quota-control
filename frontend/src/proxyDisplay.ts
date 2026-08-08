@@ -1,25 +1,32 @@
+import type { Translator } from "./i18n/translate";
 import type { ProxyTestResult } from "./types";
 
-export function proxyBadgeLabel(serviceName: string, proxy: ProxyTestResult): string {
-  return `${serviceName} ${proxyStatusLabel(proxy)}`;
+type DashboardT = Translator<"dashboard">;
+
+export function proxyBadgeLabel(
+  serviceName: string,
+  proxy: ProxyTestResult,
+  t: DashboardT,
+): string {
+  return `${serviceName} ${proxyStatusLabel(proxy, t)}`;
 }
 
-export function proxyStatusLabel(proxy: ProxyTestResult): string {
+export function proxyStatusLabel(proxy: ProxyTestResult, t: DashboardT): string {
   if (proxy.status === "proxy") {
-    return "代理已连接";
+    return t("proxy_connected");
   }
   if (proxy.status === "direct") {
-    return "当前直连";
+    return t("proxy_direct");
   }
-  return "代理未连通";
+  return t("proxy_down");
 }
 
-export function proxyDetailLabel(proxy: ProxyTestResult): string {
+export function proxyDetailLabel(proxy: ProxyTestResult, t: DashboardT): string {
   if (proxy.status === "proxy" && proxy.proxyUrl) {
-    return `代理已连接：${proxy.proxyUrl}`;
+    return t("proxy_connected_url", { url: proxy.proxyUrl });
   }
   if (proxy.status === "direct") {
-    return "未检测到可用代理，当前走直连";
+    return t("proxy_direct_detail");
   }
-  return proxy.message || "代理未连通，请检查地址和本地端口";
+  return proxy.message || t("proxy_down_detail");
 }

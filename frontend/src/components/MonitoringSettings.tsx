@@ -1,5 +1,6 @@
 import { Activity, PanelTop } from "lucide-react";
 import { api } from "../api";
+import { useTranslations } from "../i18n";
 import type { DashboardState, StatusBarDisplayConfig } from "../types";
 import { ToggleSwitch } from "./ToggleSwitch";
 
@@ -9,28 +10,23 @@ interface MonitoringSettingsProps {
 }
 
 const services = [
-  {
-    id: "kimi",
-    name: "Kimi Code",
-    description: "获取 Kimi Code 的用量和频限状态。",
-  },
-  {
-    id: "codex",
-    name: "Codex",
-    description: "通过 Codex 登录信息获取用量状态。",
-  },
+  { id: "kimi", nameKey: "kimi_code" as const },
+  { id: "codex", nameKey: "codex" as const },
 ] as const;
 
 const displayOptions: ReadonlyArray<{
   key: keyof StatusBarDisplayConfig;
-  label: string;
+  labelKey: "show_icon" | "show_percentage" | "show_state_text";
 }> = [
-  { key: "showIcon", label: "服务图标" },
-  { key: "showPercentage", label: "百分比" },
-  { key: "showStateText", label: "状态文字" },
+  { key: "showIcon", labelKey: "show_icon" },
+  { key: "showPercentage", labelKey: "show_percentage" },
+  { key: "showStateText", labelKey: "show_state_text" },
 ];
 
 export function MonitoringSettings({ state, onChange }: MonitoringSettingsProps) {
+  const t = useTranslations("monitoring");
+  const common = useTranslations("common");
+
   async function updateServiceList(
     service: string,
     enabled: boolean,
@@ -60,21 +56,21 @@ export function MonitoringSettings({ state, onChange }: MonitoringSettingsProps)
       <section className="panel">
         <div className="panel-title">
           <Activity size={15} strokeWidth={1.75} aria-hidden />
-          监控服务
+          {t("services_title")}
         </div>
         {services.map((service) => {
+          const name = common(service.nameKey);
           const monitored = state.config.selectedServices.includes(service.id);
           return (
             <div className="switch-row" key={service.id}>
               <span>
-                <strong>{service.name}</strong>
-                <small>{service.description}</small>
+                <strong>{name}</strong>
               </span>
               <div className="service-switches">
                 <label>
-                  <span>监控</span>
+                  <span>{t("monitor")}</span>
                   <ToggleSwitch
-                    aria-label={`监控 ${service.name}`}
+                    aria-label={t("monitor_service", { service: name })}
                     checked={monitored}
                     onChange={(enabled) =>
                       void updateServiceList(
@@ -87,9 +83,9 @@ export function MonitoringSettings({ state, onChange }: MonitoringSettingsProps)
                   />
                 </label>
                 <label>
-                  <span>状态栏</span>
+                  <span>{t("menu_bar")}</span>
                   <ToggleSwitch
-                    aria-label={`在状态栏显示 ${service.name}`}
+                    aria-label={t("show_in_menu_bar", { service: name })}
                     disabled={!monitored}
                     checked={state.config.statusBarServices.includes(service.id)}
                     onChange={(enabled) =>
@@ -111,21 +107,23 @@ export function MonitoringSettings({ state, onChange }: MonitoringSettingsProps)
       <section className="panel">
         <div className="panel-title">
           <PanelTop size={15} strokeWidth={1.75} aria-hidden />
-          状态栏样式
+          {t("menu_bar_style")}
         </div>
-        <p className="muted">三个元素可以独立开关并自由组合。</p>
-        {displayOptions.map(({ key, label }) => (
-          <div className="switch-row" key={key}>
-            <span>
-              <strong>{label}</strong>
-            </span>
-            <ToggleSwitch
-              aria-label={`状态栏显示${label}`}
-              checked={state.config.statusBarDisplay[key]}
-              onChange={(enabled) => void updateDisplay(key, enabled)}
-            />
-          </div>
-        ))}
+        {displayOptions.map(({ key, labelKey }) => {
+          const label = t(labelKey);
+          return (
+            <div className="switch-row" key={key}>
+              <span>
+                <strong>{label}</strong>
+              </span>
+              <ToggleSwitch
+                aria-label={t("menu_bar_toggle", { label })}
+                checked={state.config.statusBarDisplay[key]}
+                onChange={(enabled) => void updateDisplay(key, enabled)}
+              />
+            </div>
+          );
+        })}
       </section>
     </>
   );

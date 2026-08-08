@@ -1,0 +1,223 @@
+[quota_aria]
+en = "{name} quota"
+zh-CN = "{name} 配额"
+
+[needs_login]
+en = "Sign-in required"
+zh-CN = "需要登录"
+
+[login_expired]
+en = "Sign-in expired. Sign in again, then tap Refresh above."
+zh-CN = "登录已失效。重新登录后点上方刷新。"
+
+[waiting_first_refresh]
+en = "Fetching first usage sample…"
+zh-CN = "正在获取首次用量…"
+
+[tier_5h]
+en = "5 hours"
+zh-CN = "5 小时"
+
+[tier_7d]
+en = "7 days"
+zh-CN = "7 天"
+
+[no_5h_limit]
+en = "No 5-hour limit"
+zh-CN = "当前无 5 小时限制"
+
+[projected_usage]
+en = "Projected usage"
+zh-CN = "预计用量"
+
+[accumulating]
+en = "Collecting"
+zh-CN = "积累中"
+
+[exhausted_early]
+en = "Exhausted {duration} early."
+zh-CN = "已提前 {duration} 耗尽。"
+
+[updated_at]
+en = "Updated {time}"
+zh-CN = "更新于 {time}"
+
+[state_enough]
+en = "OK"
+zh-CN = "够用"
+
+[state_tight]
+en = "Tight"
+zh-CN = "偏紧"
+
+[state_not_enough]
+en = "Not enough"
+zh-CN = "不够"
+
+[state_waiting]
+en = "Waiting for data"
+zh-CN = "等待数据"
+
+[hint_exhaust_in]
+en = "Expected to run out in {duration}."
+zh-CN = "预计将在 {duration} 后耗尽。"
+
+[hint_tight]
+en = "Likely won’t run out this week, but headroom is tight."
+zh-CN = "本周内预计不会耗尽，但余量偏紧。"
+
+[hint_enough]
+en = "Expected to last through this week."
+zh-CN = "本周内预计够用。"
+
+[hint_waiting]
+en = "Waiting for more usage data to estimate."
+zh-CN = "等待更多用量数据后估算。"
+
+[unknown_time]
+en = "Unknown time"
+zh-CN = "未知时间"
+
+[reset_at]
+en = "{time} reset"
+zh-CN = "{time} 重置"
+
+[reset_in]
+en = "resets in {duration}"
+zh-CN = "{duration}后重置"
+
+[duration_days_hours]
+en = "{days}d {hours}h"
+zh-CN = "{days} 天 {hours} 小时"
+
+[duration_days]
+en = "{days}d"
+zh-CN = "{days} 天"
+
+[duration_hours_minutes]
+en = "{hours}h {minutes}m"
+zh-CN = "{hours} 小时 {minutes} 分钟"
+
+[duration_hours]
+en = "{hours}h"
+zh-CN = "{hours} 小时"
+
+[duration_minutes]
+en = "{minutes}m"
+zh-CN = "{minutes} 分钟"
+
+[reset_datetime]
+en = "{month}/{day} {hour}:{minute}"
+zh-CN = "{month}月{day}日 {hour}:{minute}"
+
+[proxy_connected]
+en = "Proxy connected"
+zh-CN = "代理已连接"
+
+[proxy_direct]
+en = "Direct"
+zh-CN = "当前直连"
+
+[proxy_down]
+en = "Proxy unavailable"
+zh-CN = "代理未连通"
+
+[proxy_connected_url]
+en = "Proxy connected: {url}"
+zh-CN = "代理已连接：{url}"
+
+[proxy_direct_detail]
+en = "No usable proxy found; using direct connection"
+zh-CN = "未检测到可用代理，当前走直连"
+
+[proxy_down_detail]
+en = "Proxy unavailable; check the URL and local ports"
+zh-CN = "代理未连通，请检查地址和本地端口"
+
+[trend_pending_title]
+en = "Building trend chart"
+zh-CN = "趋势图正在建立"
+
+[trend_pending_body]
+en = "Short-term forecasts need at least 5 samples spanning 20 stable minutes; keep collecting otherwise."
+zh-CN = "短期预测至少需要 5 个样本并稳定覆盖 20 分钟；否则继续积累数据。"
+
+[legend_observed]
+en = "Actual usage"
+zh-CN = "实际用量"
+
+[legend_projected]
+en = "Near-term forecast"
+zh-CN = "近期趋势预测"
+
+[now]
+en = "Now"
+zh-CN = "现在"
+
+[axis_reset]
+en = "{date} reset"
+zh-CN = "{date} 重置"
+
+[trend_accumulating]
+en = "Collecting trend data"
+zh-CN = "正在积累趋势数据"
+
+[trend_primary_at_reset]
+en = "Projected ~{percent}% at reset"
+zh-CN = "预计重置时约 {percent}%"
+
+[trend_primary_at_reset_tight]
+en = "Projected ~{percent}% at reset — tight"
+zh-CN = "预计重置时约 {percent}%，余量偏紧"
+
+[trend_primary_exhaust]
+en = "Projected to run out in {duration}"
+zh-CN = "预计 {duration}后用完"
+
+[trend_primary_exhausted]
+en = "Ran out before reset this cycle"
+zh-CN = "本周期已在重置前用完"
+
+[trend_detail_pace_up]
+en = "Based on the {window}, usage is rising by about {rate}% each hour."
+zh-CN = "根据{window}的变化，用量大约每小时增加 {rate}%。"
+
+[trend_detail_pace_flat]
+en = "Based on the {window}, usage has stayed about the same."
+zh-CN = "根据{window}的变化，用量基本保持平稳。"
+
+[trend_detail_exhausted]
+en = "That was about {early} before this cycle resets."
+zh-CN = "比本次重置大约提前了 {early}。"
+
+[trend_window_short]
+en = "last {span}"
+zh-CN = "最近 {span}"
+
+[trend_window_hours]
+en = "last {hours} hours"
+zh-CN = "最近 {hours} 小时"
+
+[chart_actual]
+en = "Actual usage is currently {percent}%"
+zh-CN = "实际用量当前为 {percent}%"
+
+[chart_actual_empty]
+en = "No actual usage data yet"
+zh-CN = "实际用量暂无数据"
+
+[chart_projected]
+en = "Near-term forecast reaches {percent}%"
+zh-CN = "近期趋势预测到 {percent}%"
+
+[chart_projected_empty]
+en = "Near-term forecast still collecting"
+zh-CN = "近期趋势预测正在积累数据"
+
+[chart_aria]
+en = "7-day usage chart: {actual}; {projected}."
+zh-CN = "7 天用量趋势图：{actual}；{projected}。"
+
+[span_minutes]
+en = "{minutes} minutes"
+zh-CN = "{minutes} 分钟"

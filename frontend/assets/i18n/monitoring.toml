@@ -1,0 +1,131 @@
+[services_title]
+en = "Monitored services"
+zh-CN = "监控服务"
+
+[monitor]
+en = "Monitor"
+zh-CN = "监控"
+
+[menu_bar]
+en = "Menu bar"
+zh-CN = "状态栏"
+
+[monitor_service]
+en = "Monitor {service}"
+zh-CN = "监控 {service}"
+
+[show_in_menu_bar]
+en = "Show {service} in menu bar"
+zh-CN = "在状态栏显示 {service}"
+
+[menu_bar_style]
+en = "Menu bar style"
+zh-CN = "状态栏样式"
+
+[show_icon]
+en = "Service icon"
+zh-CN = "服务图标"
+
+[show_percentage]
+en = "Percentage"
+zh-CN = "百分比"
+
+[show_state_text]
+en = "Status text"
+zh-CN = "状态文字"
+
+[menu_bar_toggle]
+en = "Menu bar: {label}"
+zh-CN = "状态栏显示{label}"
+
+[accounts_title]
+en = "Upstream accounts"
+zh-CN = "上游监控账号"
+
+[accounts_hint]
+en = "Each account maps to one overview card and can be used in the desktop widget."
+zh-CN = "每个账号对应一张概览卡片，也可用于桌面 Widget。"
+
+[add_kimi]
+en = "Add Kimi account"
+zh-CN = "添加 Kimi 账号"
+
+[import_codex]
+en = "Import Codex account"
+zh-CN = "导入 Codex 账号"
+
+[account_name]
+en = "Account name"
+zh-CN = "账号名称"
+
+[account_name_placeholder_kimi]
+en = "e.g. Work Kimi"
+zh-CN = "例如：工作 Kimi"
+
+[account_name_placeholder_codex]
+en = "e.g. Personal Codex"
+zh-CN = "例如：个人 Codex"
+
+[kimi_api_key]
+en = "Kimi API Key"
+zh-CN = "Kimi API Key"
+
+[storage_backend]
+en = "Storage"
+zh-CN = "存储方式"
+
+[backend_keychain]
+en = "macOS Keychain"
+zh-CN = "macOS 钥匙串"
+
+[backend_vault]
+en = "Local encrypted storage"
+zh-CN = "本地加密存储"
+
+[codex_import_note]
+en = "Imports the current Codex CLI login into the app keychain. Later CLI login changes will not affect this account."
+zh-CN = "将当前 Codex CLI 登录导入应用专属钥匙串，后续切换 CLI 登录不会改变此账号。"
+
+[save_kimi]
+en = "Save Kimi account"
+zh-CN = "保存 Kimi 账号"
+
+[import_codex_login]
+en = "Import current Codex login"
+zh-CN = "导入当前 Codex 登录"
+
+[new_account_name]
+en = "New account name"
+zh-CN = "新账号名称"
+
+[save_name]
+en = "Save name"
+zh-CN = "保存名称"
+
+[save_name_for]
+en = "Save name for {name}"
+zh-CN = "保存 {name} 的名称"
+
+[cancel_rename]
+en = "Cancel rename"
+zh-CN = "取消重命名"
+
+[rename]
+en = "Rename"
+zh-CN = "重命名"
+
+[rename_account]
+en = "Rename {name}"
+zh-CN = "重命名 {name}"
+
+[delete_account]
+en = "Delete account"
+zh-CN = "删除账号"
+
+[delete_account_for]
+en = "Delete {name}"
+zh-CN = "删除 {name}"
+
+[confirm_delete]
+en = "Delete account “{name}”?"
+zh-CN = "删除账号“{name}”？"
