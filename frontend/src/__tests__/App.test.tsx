@@ -281,7 +281,12 @@ describe("App", () => {
     expect(
       screen.getByRole("img", { name: /实际用量.*近期趋势预测/ }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/近 24 小时趋势：每小时增加 0.4%/)).toBeInTheDocument();
+    expect(within(kimiCard).getByText("预计重置时约 72%")).toBeInTheDocument();
+    expect(
+      within(kimiCard).getByText(
+        "根据最近 24 小时的变化，用量大约每小时增加 0.4%。",
+      ),
+    ).toBeInTheDocument();
     expect(within(kimiCard).getByText(/更新于/)).toBeInTheDocument();
     expect(kimiCard.querySelectorAll(".proxy-line")).toHaveLength(1);
     expect(screen.queryByText("direct")).not.toBeInTheDocument();

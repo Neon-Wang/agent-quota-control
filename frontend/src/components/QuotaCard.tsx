@@ -3,6 +3,7 @@ import { useFormatter, useTranslations } from "../i18n";
 import type { Translator } from "../i18n/translate";
 import { proxyDetailLabel } from "../proxyDisplay";
 import type { CardSnapshot, QuotaEstimate, SufficiencyState } from "../types";
+import { meterFillClass, usageToneClass } from "../usageColor";
 import { UsageTrendChart } from "./UsageTrendChart";
 
 interface QuotaCardProps {
@@ -105,11 +106,13 @@ export function QuotaCard({ card, iconSrc }: QuotaCardProps) {
                     </small>
                   )}
                 </span>
-                <strong>{Math.round(tier.utilization)}%</strong>
+                <strong className={usageToneClass(tier.utilization)}>
+                  {Math.round(tier.utilization)}%
+                </strong>
               </div>
               <div className="meter" aria-label={`${tier.name} utilization`}>
                 <div
-                  className={meterClass(tier.utilization)}
+                  className={meterFillClass(tier.utilization)}
                   style={{ width: `${Math.min(tier.utilization, 100)}%` }}
                 />
               </div>
@@ -172,12 +175,6 @@ function trendCoversEstimate(estimate: QuotaEstimate): boolean {
     Number.isFinite(windowEnd) &&
     windowEnd > windowStart;
   return hasDomain;
-}
-
-function meterClass(utilization: number): string {
-  if (utilization >= 90) return "meter-fill danger";
-  if (utilization >= 70) return "meter-fill warn";
-  return "meter-fill ok-fill";
 }
 
 function tierLabel(name: string, t: Translator<"dashboard">): string {

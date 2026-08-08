@@ -16,3 +16,9 @@ macos-widget/build/
 *.app
 
 *.log
+
+# Local frontend debug fixtures (never ship)
+frontend/.env.local
+frontend/src/debug/*.local.ts
+frontend/src/debug/*.local.tsx
+frontend/src/debug/*.local.json

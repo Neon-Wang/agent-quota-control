@@ -21,6 +21,7 @@ import appMarkDark from "./assets/app-mark-dark.png";
 import appMarkLight from "./assets/app-mark-light.png";
 import codexIcon from "./assets/codex.png";
 import kimiIcon from "./assets/kimi.png";
+import { isFakeDashboardEnabled } from "./debug/fakeDashboard";
 import { useTranslations } from "./i18n";
 import type { Translator } from "./i18n/translate";
 import type { DashboardState } from "./types";
@@ -48,6 +49,9 @@ export function App() {
 
   useEffect(() => {
     void loadState();
+    // Fake dashboard is local-only; ignore live Tauri pushes so they don't overwrite it.
+    if (isFakeDashboardEnabled()) return;
+
     const unlisten = listen<DashboardState>("dashboard://updated", (event) => {
       setState(event.payload);
       setLoading(false);

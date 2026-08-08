@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { tryGetFakeDashboard } from "./debug/fakeDashboard";
 import type {
   DashboardState,
   KimiCredentialBackend,
@@ -8,38 +9,49 @@ import type {
   StatusBarDisplayConfig,
 } from "./types";
 
+async function dashboardOrInvoke(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<DashboardState> {
+  const fake = await tryGetFakeDashboard();
+  if (fake) return fake;
+  return args === undefined
+    ? invoke<DashboardState>(command)
+    : invoke<DashboardState>(command, args);
+}
+
 export const api = {
-  getDashboardState: () => invoke<DashboardState>("get_dashboard_state"),
-  refreshUsage: () => invoke<DashboardState>("refresh_usage"),
+  getDashboardState: () => dashboardOrInvoke("get_dashboard_state"),
+  refreshUsage: () => dashboardOrInvoke("refresh_usage"),
   setSelectedServices: (serviceIds: string[]) =>
-    invoke<DashboardState>("set_selected_services", { serviceIds }),
+    dashboardOrInvoke("set_selected_services", { serviceIds }),
   setStatusBarServices: (serviceIds: string[]) =>
-    invoke<DashboardState>("set_status_bar_services", { serviceIds }),
+    dashboardOrInvoke("set_status_bar_services", { serviceIds }),
   setStatusBarDisplay: (display: StatusBarDisplayConfig) =>
-    invoke<DashboardState>("set_status_bar_display", { display }),
+    dashboardOrInvoke("set_status_bar_display", { display }),
   saveProxySettings: (settings: ProxySettings) =>
-    invoke<DashboardState>("save_proxy_settings", { settings }),
+    dashboardOrInvoke("save_proxy_settings", { settings }),
   testProxy: (service: string, config: ServiceProxyConfig) =>
     invoke<ProxyTestResult>("test_proxy", { service, config }),
   saveKimiApiKey: (apiKey: string, backend: KimiCredentialBackend) =>
-    invoke<DashboardState>("save_kimi_api_key", { apiKey, backend }),
+    dashboardOrInvoke("save_kimi_api_key", { apiKey, backend }),
   clearKimiApiKey: (backend: KimiCredentialBackend) =>
-    invoke<DashboardState>("clear_kimi_api_key", { backend }),
+    dashboardOrInvoke("clear_kimi_api_key", { backend }),
   addKimiAccount: (
     displayName: string,
     apiKey: string,
     backend: KimiCredentialBackend,
   ) =>
-    invoke<DashboardState>("add_kimi_account", {
+    dashboardOrInvoke("add_kimi_account", {
       displayName,
       apiKey,
       backend,
     }),
   importCodexAccount: (displayName: string) =>
-    invoke<DashboardState>("import_codex_account", { displayName }),
+    dashboardOrInvoke("import_codex_account", { displayName }),
   renameAccount: (accountId: string, displayName: string) =>
-    invoke<DashboardState>("rename_account", { accountId, displayName }),
+    dashboardOrInvoke("rename_account", { accountId, displayName }),
   removeAccount: (accountId: string) =>
-    invoke<DashboardState>("remove_account", { accountId }),
+    dashboardOrInvoke("remove_account", { accountId }),
   revealConfigDir: () => invoke<void>("reveal_config_dir"),
 };
